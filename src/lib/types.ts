@@ -518,3 +518,10 @@ export interface BloatwareRemoveResult {
   removed: string[];
   failed: AppxRemovalFailure[];
 }
+
+export interface AppInfo {
+  version: string;
+  dataDir: string;
+  snapshotsDir: string;
+  snapshotRetention: number;
+}

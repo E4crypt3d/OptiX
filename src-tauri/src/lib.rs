@@ -31,6 +31,7 @@ pub fn run() {
             commands::system::system_stats,
             commands::system::record_sample,
             commands::system::recent_samples,
+            commands::system::app_info,
             commands::snapshot::create_snapshot,
             commands::snapshot::list_snapshots,
             commands::snapshot::list_changes,

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AppInfo,
   AppxPackage,
   BenchmarkResult,
   BloatwareRemoveResult,
@@ -316,4 +317,8 @@ export function scanBloatware(): Promise<AppxPackage[]> {
 
 export function removeBloatware(fullNames: string[]): Promise<BloatwareRemoveResult> {
   return invoke<BloatwareRemoveResult>("remove_bloatware", { fullNames });
+}
+
+export function getAppInfo(): Promise<AppInfo> {
+  return invoke<AppInfo>("app_info");
 }

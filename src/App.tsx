@@ -8,21 +8,14 @@ import { Dashboard } from "./components/Dashboard";
 import { Games } from "./components/Games";
 import { Gpu } from "./components/Gpu";
 import { Network } from "./components/Network";
-import { Placeholder } from "./components/Placeholder";
 import { Power } from "./components/Power";
 import { Processes } from "./components/Processes";
 import { Rollback } from "./components/Rollback";
 import { Scanner } from "./components/Scanner";
+import { Settings } from "./components/Settings";
 import { StartupServices } from "./components/StartupServices";
 import { Sidebar, type ViewId } from "./components/Sidebar";
 import { Snapshots } from "./components/Snapshots";
-
-const PLACEHOLDERS: Record<string, { title: string; description: string }> = {
-  settings: {
-    title: "Settings",
-    description: "Configure Optix behavior and safety preferences.",
-  },
-};
 
 export default function App() {
   const [view, setView] = useState<ViewId>("dashboard");
@@ -47,12 +40,7 @@ export default function App() {
           {view === "benchmarks" && <Benchmark />}
           {view === "crash" && <CrashReports />}
           {view === "diagnostics" && <Diagnostics />}
-          {PLACEHOLDERS[view] && (
-            <Placeholder
-              title={PLACEHOLDERS[view].title}
-              description={PLACEHOLDERS[view].description}
-            />
-          )}
+          {view === "settings" && <Settings />}
         </div>
       </main>
     </div>

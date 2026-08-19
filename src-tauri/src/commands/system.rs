@@ -5,6 +5,7 @@ use sysinfo::{Disks, Networks, System};
 
 use crate::db::sqlite::Database;
 use crate::error::{OptixError, Result};
+use crate::models::app::AppInfo;
 use crate::models::hardware::*;
 use crate::win;
 
@@ -298,4 +299,15 @@ pub fn record_sample(
 #[tauri::command]
 pub fn recent_samples(db: tauri::State<'_, Database>) -> Result<Vec<HardwareSample>> {
     db.recent_hardware_samples(200)
+}
+
+/// App version and on-disk data locations (Settings page).
+#[tauri::command]
+pub fn app_info() -> AppInfo {
+    AppInfo {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        data_dir: crate::db::sqlite::data_dir().to_string_lossy().into_owned(),
+        snapshots_dir: crate::db::sqlite::snapshots_dir().to_string_lossy().into_owned(),
+        snapshot_retention: crate::engine::snapshot::SNAPSHOT_RETENTION,
+    }
 }

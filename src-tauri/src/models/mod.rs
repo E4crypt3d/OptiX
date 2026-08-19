@@ -1,3 +1,4 @@
+pub mod app;
 pub mod benchmark;
 pub mod bloatware;
 pub mod cleanup;
