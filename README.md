@@ -69,13 +69,21 @@ modification follows a fixed pipeline:
   comparison, and a frame-time chart (series re-loaded from the saved CSV).
   Remaining: bundle the PresentMon binary in `resources/`, GPU/PDH and latency
   sampling during capture, ICMP ping/jitter.
-- ⬜ Phase 11–12 — Crash Recovery, Diagnostics
+- 🚧 **Phase 11 — Crash Recovery**: Application Event Log scan (Event IDs 1000
+  Application Error / 1001 WER / 4101 display-driver TDR via EvtQuery/EvtNext/
+  EvtRender + XML parsing), WER `Report.wer` parsing, minidump discovery,
+  exception-code + faulting-module classification (NVIDIA/AMD/Intel/DirectX),
+  dedup across sources, and `CrashReport.zip` generation (`zip` crate) with a
+  size-capped minidump. Remaining: background event subscription (live watch),
+  game-session correlation via the Phase 9 watcher.
+- ⬜ Phase 12 — AI Diagnostics
 
 ## Stack
 
 - **Frontend**: React 19 + TypeScript, Tailwind CSS v4, Vite, Recharts
 - **Backend**: Rust, Tauri v2, `sysinfo` (cross-platform scanner), `rusqlite`
-  (bundled SQLite), `windows-sys` + `winreg` (Windows integration)
+  (bundled SQLite), `windows-sys` + `winreg` (Windows integration), `zip`
+  (crash report bundles)
 - **Database**: SQLite at `C:\ProgramData\Optix\optix.db`
 
 ## Architecture
@@ -89,9 +97,9 @@ src-tauri/
     error.rs             OptixError (thiserror, serialized to frontend)
     commands/            Tauri commands (system.rs, processes.rs, …)
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher / benchmark
-    models/              hardware / snapshot / optimization / power / network / process / services / gpu / games / benchmark structs
-    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games, presentmon
+    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher / benchmark / crash
+    models/              hardware / snapshot / optimization / power / network / process / services / gpu / games / benchmark / crash structs
+    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games, presentmon, crash
 ```
 
 ## Development

@@ -4,6 +4,7 @@ import type {
   BenchmarkResult,
   CleanupCategory,
   CleanupResult,
+  CrashReport,
   DetectedGame,
   Game,
   GameProfile,
@@ -292,4 +293,12 @@ export function deleteBenchmark(id: number): Promise<void> {
 
 export function benchmarkFrameTimes(id: number): Promise<number[]> {
   return invoke<number[]>("benchmark_frame_times", { id });
+}
+
+export function scanCrashes(): Promise<CrashReport[]> {
+  return invoke<CrashReport[]>("scan_crashes");
+}
+
+export function generateCrashReport(crash: CrashReport): Promise<string> {
+  return invoke<string>("generate_crash_report", { crash });
 }

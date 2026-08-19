@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Archive,
   BatteryCharging,
   Cpu,
@@ -28,6 +29,7 @@ export type ViewId =
   | "gpu"
   | "games"
   | "benchmarks"
+  | "crash"
   | "settings";
 
 const NAV: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
@@ -43,6 +45,7 @@ const NAV: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "gpu", label: "GPU", icon: Monitor },
   { id: "games", label: "Game Profiles", icon: Gamepad2 },
   { id: "benchmarks", label: "Benchmarks", icon: Gauge },
+  { id: "crash", label: "Crash Reports", icon: AlertTriangle },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

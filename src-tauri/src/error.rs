@@ -51,4 +51,10 @@ impl From<serde_json::Error> for OptixError {
     }
 }
 
+impl From<zip::result::ZipError> for OptixError {
+    fn from(e: zip::result::ZipError) -> Self {
+        OptixError::Other(e.to_string())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, OptixError>;

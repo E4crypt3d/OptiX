@@ -468,3 +468,19 @@ export interface BenchmarkResult {
   droppedFrames: number;
   frameCount: number;
 }
+
+export interface CrashReport {
+  detectedAt: number;
+  app: string;
+  pid: number | null;
+  eventId: number | null;
+  module: string | null;
+  exceptionCode: string | null;
+  exceptionName: string | null;
+  severity: string;
+  recommendation: string;
+  werReportPath: string | null;
+  minidumpPath: string | null;
+  reportZipPath: string | null;
+  source: string;
+}

@@ -1,5 +1,6 @@
 pub mod benchmark;
 pub mod cleanup;
+pub mod crash;
 pub mod games;
 pub mod gpu;
 pub mod hardware;

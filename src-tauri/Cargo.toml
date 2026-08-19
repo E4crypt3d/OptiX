@@ -29,6 +29,7 @@ thiserror = "2.0.20"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    "Win32_System_EventLog",
     "Win32_System_Power",
     "Win32_System_Registry",
     "Win32_System_Services",
@@ -38,6 +39,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 uuid = { version = "1.24.1", features = ["v4"] }
+zip = "4"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56.0"

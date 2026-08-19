@@ -3,6 +3,7 @@
 //! development. Windows-specific crates (`winreg`, `wmi`, `windows-version`)
 //! are declared under `[target.'cfg(windows)'.dependencies]` in `Cargo.toml`.
 
+pub mod crash;
 pub mod elevation;
 pub mod enrich;
 pub mod games;
