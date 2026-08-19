@@ -1,4 +1,5 @@
 pub mod benchmark;
+pub mod bloatware;
 pub mod cleanup;
 pub mod crash;
 pub mod diagnostics;

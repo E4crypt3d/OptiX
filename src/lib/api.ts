@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  ChangeRecord,
+  AppxPackage,
   BenchmarkResult,
+  BloatwareRemoveResult,
+  ChangeRecord,
   CleanupCategory,
   CleanupResult,
   CrashReport,
@@ -306,4 +308,12 @@ export function generateCrashReport(crash: CrashReport): Promise<string> {
 
 export function runDiagnostics(): Promise<Diagnostic[]> {
   return invoke<Diagnostic[]>("run_diagnostics");
+}
+
+export function scanBloatware(): Promise<AppxPackage[]> {
+  return invoke<AppxPackage[]>("scan_bloatware");
+}
+
+export function removeBloatware(fullNames: string[]): Promise<BloatwareRemoveResult> {
+  return invoke<BloatwareRemoveResult>("remove_bloatware", { fullNames });
 }

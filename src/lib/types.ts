@@ -494,3 +494,27 @@ export interface Diagnostic {
   recommendation: string;
   confidence: number;
 }
+
+export type AppxClassification = "protected" | "removal" | "caution" | "unknown";
+
+export interface AppxPackage {
+  name: string;
+  fullName: string;
+  publisher: string;
+  version: string;
+  architecture: string;
+  installLocation: string;
+  classification: AppxClassification;
+  provisioned: boolean;
+}
+
+export interface AppxRemovalFailure {
+  fullName: string;
+  error: string;
+}
+
+export interface BloatwareRemoveResult {
+  snapshotId: string;
+  removed: string[];
+  failed: AppxRemovalFailure[];
+}

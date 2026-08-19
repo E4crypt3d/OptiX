@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Benchmark } from "./components/Benchmark";
+import { Bloatware } from "./components/Bloatware";
 import { Cleanup } from "./components/Cleanup";
 import { CrashReports } from "./components/CrashReports";
 import { Diagnostics } from "./components/Diagnostics";
@@ -36,6 +37,7 @@ export default function App() {
           {view === "snapshots" && <Snapshots />}
           {view === "rollback" && <Rollback />}
           {view === "cleanup" && <Cleanup />}
+          {view === "bloatware" && <Bloatware />}
           {view === "processes" && <Processes />}
           {view === "power" && <Power />}
           {view === "startup" && <StartupServices />}

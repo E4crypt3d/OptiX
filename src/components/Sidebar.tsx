@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Monitor,
   Network,
+  PackageX,
   Rocket,
   ScanSearch,
   Settings,
@@ -23,6 +24,7 @@ export type ViewId =
   | "snapshots"
   | "rollback"
   | "cleanup"
+  | "bloatware"
   | "processes"
   | "power"
   | "startup"
@@ -40,6 +42,7 @@ const NAV: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "snapshots", label: "Snapshots", icon: Archive },
   { id: "rollback", label: "Rollback Center", icon: Undo2 },
   { id: "cleanup", label: "Cleanup", icon: Trash2 },
+  { id: "bloatware", label: "Bloatware", icon: PackageX },
   { id: "processes", label: "Processes & RAM", icon: Cpu },
   { id: "power", label: "Power", icon: BatteryCharging },
   { id: "startup", label: "Startup & Services", icon: Rocket },

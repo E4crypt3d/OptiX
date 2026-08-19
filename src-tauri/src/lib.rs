@@ -39,6 +39,8 @@ pub fn run() {
             commands::snapshot::diff_snapshots,
             commands::cleanup::scan_cleanup,
             commands::cleanup::run_cleanup,
+            commands::bloatware::scan_bloatware,
+            commands::bloatware::remove_bloatware,
             commands::processes::list_processes,
             commands::processes::kill_process,
             commands::processes::set_process_priority,

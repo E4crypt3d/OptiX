@@ -21,8 +21,11 @@ modification follows a fixed pipeline:
   snapshot diff. Remaining: System Restore point.
 - 🚧 **Phase 3 — System Cleanup**: safe-category scanner (temp, browser/GPU
   shader caches, crash dumps, logs) with deny-list, snapshot-first deletion,
-  policy (keep-newest / age-based). Remaining: bloatware/AppX module,
-  SoftwareDistribution + Recycle Bin categories, DISM component cleanup.
+  policy (keep-newest / age-based), and a bloatware/AppX module (PowerShell
+  enumeration + removal with a protected allowlist, removal-candidate and
+  caution lists, and provisioned-package removal to prevent reinstall).
+  Remaining: SoftwareDistribution + Recycle Bin categories, DISM component
+  cleanup.
 - 🚧 **Phase 4 — Process & RAM Management**: process analyzer with
   REQUIRED/SAFE/UNKNOWN classification, kill + priority controls (never
   REALTIME), gaming mode (boost game / lower background / restore on exit),
@@ -101,9 +104,9 @@ src-tauri/
     error.rs             OptixError (thiserror, serialized to frontend)
     commands/            Tauri commands (system.rs, processes.rs, …)
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher / benchmark / crash / diagnostics
-    models/              hardware / snapshot / optimization / power / network / process / services / gpu / games / benchmark / crash / diagnostics structs
-    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games, presentmon, crash
+    engine/              cleanup / bloatware / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher / benchmark / crash / diagnostics
+    models/              hardware / snapshot / optimization / cleanup / bloatware / power / network / process / services / gpu / games / benchmark / crash / diagnostics structs
+    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games, presentmon, crash, appx
 ```
 
 ## Development
