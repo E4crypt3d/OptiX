@@ -13,12 +13,12 @@ modification follows a fixed pipeline:
 
 - ✅ **Phase 0 — Foundation**: Tauri v2 shell, SQLite schema + migrations,
   error model, elevation bootstrap, CI, scanner + dashboard skeleton.
-- 🚧 **Phase 1 — System Scanner**: hardware + software scan with WMI
+- ✅ **Phase 1 — System Scanner**: hardware + software scan with WMI
   enrichment (GPU VRAM, physical disk health/type, motherboard/BIOS, OS build),
-  telemetry sampling, health badges. Remaining: GPU & cache panel.
+  telemetry sampling, health badges.
 - 🚧 **Phase 2 — Snapshot & Recovery Engine**: snapshot create/list/delete +
   retention, change journal, reverse-order rollback (registry + power domains),
-  snapshot diff. Remaining: service/network capture domains + System Restore point.
+  snapshot diff. Remaining: System Restore point.
 - 🚧 **Phase 3 — System Cleanup**: safe-category scanner (temp, browser/GPU
   shader caches, crash dumps, logs) with deny-list, snapshot-first deletion,
   policy (keep-newest / age-based). Remaining: bloatware/AppX module,
@@ -33,7 +33,7 @@ modification follows a fixed pipeline:
   and USB selective-suspend AC values), snapshot-first apply + verify + reverse
   rollback, and NIC power-saving disable (EEE, Green Ethernet, device power
   management) as reversible registry changes. Remaining: processor idle-disable
-  preset, per-phase GPU preference (Phase 8).
+  preset.
 - 🚧 **Phase 6 — Startup & Service Manager**: service enumeration (state, start
   type, binary path, description, delayed-auto-start) with REQUIRED/SAFE/UNKNOWN
   classification and a hard never-flag list; start/stop and start-type controls;
@@ -47,7 +47,14 @@ modification follows a fixed pipeline:
   snapshot-first DNS apply via the adapter's `NameServer` registry value +
   cache flush, and read-only TCP/IP parameters. Remaining: ICMP ping/jitter,
   TCP tweak apply + one-click reset.
-- ⬜ Phase 8–12 — GPU, Game Profiles, Benchmark, Crash Recovery, Diagnostics
+- 🚧 **Phase 8 — GPU Management**: display-adapter summary (VRAM from WMI),
+  risk-tiered gaming toggles (HAGS, Game DVR, Game Bar capture, Memory
+  Integrity/VBS, Game Mode, MPO) with restart hints and snapshot-first
+  reversible apply, shader-cache inventory + safe clear (NVIDIA/AMD/DirectX,
+  symlink-safe, roots preserved), and AMD shader-cache mode read/write
+  (`UMD\ShaderCache` REG_BINARY). Remaining: per-process GPU (PDH), vendor
+  driver-level toggles.
+- ⬜ Phase 9–12 — Game Profiles, Benchmark, Crash Recovery, Diagnostics
 
 ## Stack
 
@@ -67,9 +74,9 @@ src-tauri/
     error.rs             OptixError (thiserror, serialized to frontend)
     commands/            Tauri commands (system.rs, processes.rs, …)
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services
-    models/              hardware / snapshot / optimization / power / network / process / services structs
-    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process
+    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu
+    models/              hardware / snapshot / optimization / power / network / process / services / gpu structs
+    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu
 ```
 
 ## Development

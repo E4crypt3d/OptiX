@@ -1,5 +1,6 @@
 //! Registry access for snapshot capture and rollback (Windows-only), plus
-//! generic set/delete helpers used by the startup manager.
+//! generic read/set/delete helpers used by the gaming toggles and startup
+//! manager.
 
 use serde::Serialize;
 
@@ -19,7 +20,7 @@ pub struct RegistryEntry {
 }
 
 /// Capture the gaming-related registry keys Optix tracks. Read-only here; the
-/// toggle/write path lands with the GPU & cache panel.
+/// toggle/write path lives in `engine::gpu`.
 #[cfg(windows)]
 pub fn capture_gaming_toggles() -> Vec<RegistryEntry> {
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
@@ -87,9 +88,8 @@ pub fn capture_gaming_toggles() -> Vec<RegistryEntry> {
 
 /// Split a `location` of the form `<HIVE>\<subkey>\<value_name>` into its parts.
 #[cfg(windows)]
-fn parse_location(location: &str) -> Result<(winreg::RegKey, String, String)> {
+fn parse_location(location: &str) -> Result<(winreg::HKEY, String, String)> {
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
-    use winreg::RegKey;
 
     let parts: Vec<&str> = location.splitn(3, '\\').collect();
     if parts.len() != 3 {
@@ -97,23 +97,43 @@ fn parse_location(location: &str) -> Result<(winreg::RegKey, String, String)> {
             "malformed registry location: {location}"
         )));
     }
-    let (hive, subkey, value_name) = (parts[0], parts[1], parts[2]);
-    let (key, _disposition) = match hive {
-        "HKLM" => RegKey::predef(HKEY_LOCAL_MACHINE).create_subkey(subkey)?,
-        "HKCU" => RegKey::predef(HKEY_CURRENT_USER).create_subkey(subkey)?,
+    let hive = match parts[0] {
+        "HKLM" => HKEY_LOCAL_MACHINE,
+        "HKCU" => HKEY_CURRENT_USER,
         other => {
             return Err(OptixError::InvalidState(format!(
                 "unknown registry hive: {other}"
             )))
         }
     };
-    Ok((key, subkey.to_string(), value_name.to_string()))
+    Ok((hive, parts[1].to_string(), parts[2].to_string()))
+}
+
+/// Read a value at `location` as a string (DWORD decimal, else REG_SZ).
+#[cfg(windows)]
+pub fn read_registry_value(location: &str) -> Option<String> {
+    use winreg::RegKey;
+
+    let (hive, subkey, value_name) = parse_location(location).ok()?;
+    let key = RegKey::predef(hive).open_subkey(&subkey).ok()?;
+    key.get_value::<u32, _>(&value_name)
+        .ok()
+        .map(|v| v.to_string())
+        .or_else(|| key.get_value::<String, _>(&value_name).ok())
+}
+
+#[cfg(not(windows))]
+pub fn read_registry_value(_location: &str) -> Option<String> {
+    None
 }
 
 /// Write a value (DWORD when numeric, otherwise REG_SZ) at `location`.
 #[cfg(windows)]
 pub fn set_registry_value(location: &str, value: &str) -> Result<()> {
-    let (key, _subkey, value_name) = parse_location(location)?;
+    use winreg::RegKey;
+
+    let (hive, subkey, value_name) = parse_location(location)?;
+    let (key, _disposition) = RegKey::predef(hive).create_subkey(&subkey)?;
     if let Ok(v) = value.parse::<u32>() {
         key.set_value(&value_name, &v)?;
     } else {
@@ -130,7 +150,10 @@ pub fn set_registry_value(_location: &str, _value: &str) -> Result<()> {
 /// Delete the value at `location` (missing value is not an error).
 #[cfg(windows)]
 pub fn delete_registry_value(location: &str) -> Result<()> {
-    let (key, _subkey, value_name) = parse_location(location)?;
+    use winreg::RegKey;
+
+    let (hive, subkey, value_name) = parse_location(location)?;
+    let (key, _disposition) = RegKey::predef(hive).create_subkey(&subkey)?;
     let _ = key.delete_value(&value_name);
     Ok(())
 }

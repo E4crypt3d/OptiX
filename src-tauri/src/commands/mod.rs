@@ -1,4 +1,5 @@
 pub mod cleanup;
+pub mod gpu;
 pub mod network;
 pub mod power;
 pub mod processes;

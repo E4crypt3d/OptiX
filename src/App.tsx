@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Cleanup } from "./components/Cleanup";
 import { Dashboard } from "./components/Dashboard";
+import { Gpu } from "./components/Gpu";
 import { Network } from "./components/Network";
 import { Placeholder } from "./components/Placeholder";
 import { Power } from "./components/Power";
@@ -43,6 +44,7 @@ export default function App() {
           {view === "power" && <Power />}
           {view === "startup" && <StartupServices />}
           {view === "network" && <Network />}
+          {view === "gpu" && <Gpu />}
           {PLACEHOLDERS[view] && (
             <Placeholder
               title={PLACEHOLDERS[view].title}

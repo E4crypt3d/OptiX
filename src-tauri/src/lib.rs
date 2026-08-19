@@ -58,6 +58,13 @@ pub fn run() {
             commands::network::benchmark_dns,
             commands::network::apply_dns,
             commands::network::tcp_parameters,
+            commands::gpu::list_gpu_adapters,
+            commands::gpu::list_gpu_toggles,
+            commands::gpu::set_gpu_toggle,
+            commands::gpu::scan_shader_caches,
+            commands::gpu::clear_shader_caches,
+            commands::gpu::get_amd_shader_cache,
+            commands::gpu::set_amd_shader_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

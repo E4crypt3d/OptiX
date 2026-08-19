@@ -13,12 +13,18 @@ import type {
   PowerScheme,
   PriorityClass,
   ProcessDetail,
+  AmdShaderCache,
+  CacheClearResult,
   DnsApplyResult,
   DnsBenchmarkResult,
   DnsServer,
+  GamingToggle,
+  GpuAdapter,
+  GpuToggleResult,
   NetworkStatus,
   ServiceActionResult,
   ServiceInfo,
+  ShaderCache,
   Snapshot,
   StartupActionResult,
   StartupEntry,
@@ -181,4 +187,32 @@ export function applyDns(guid: string, servers: string[]): Promise<DnsApplyResul
 
 export function tcpParameters(): Promise<TcpParameter[]> {
   return invoke<TcpParameter[]>("tcp_parameters");
+}
+
+export function listGpuAdapters(): Promise<GpuAdapter[]> {
+  return invoke<GpuAdapter[]>("list_gpu_adapters");
+}
+
+export function listGpuToggles(): Promise<GamingToggle[]> {
+  return invoke<GamingToggle[]>("list_gpu_toggles");
+}
+
+export function setGpuToggle(id: string, enabled: boolean): Promise<GpuToggleResult> {
+  return invoke<GpuToggleResult>("set_gpu_toggle", { id, enabled });
+}
+
+export function scanShaderCaches(): Promise<ShaderCache[]> {
+  return invoke<ShaderCache[]>("scan_shader_caches");
+}
+
+export function clearShaderCaches(ids: string[]): Promise<CacheClearResult> {
+  return invoke<CacheClearResult>("clear_shader_caches", { ids });
+}
+
+export function getAmdShaderCache(): Promise<AmdShaderCache> {
+  return invoke<AmdShaderCache>("get_amd_shader_cache");
+}
+
+export function setAmdShaderCache(alwaysOn: boolean): Promise<AmdShaderCache> {
+  return invoke<AmdShaderCache>("set_amd_shader_cache", { alwaysOn });
 }

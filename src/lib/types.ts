@@ -354,3 +354,46 @@ export interface DnsApplyResult {
   snapshotId: string;
   changes: number;
 }
+
+export interface GpuAdapter {
+  name: string;
+  vendor: string;
+  driverVersion: string;
+  memoryBytes: number;
+}
+
+export interface GamingToggle {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  known: boolean;
+  impactNote: string;
+  risk: string;
+  requiresRestart: boolean;
+}
+
+export interface ShaderCache {
+  id: string;
+  name: string;
+  path: string;
+  sizeBytes: number;
+  fileCount: number;
+  description: string;
+}
+
+export interface GpuToggleResult {
+  snapshotId: string;
+  changes: number;
+}
+
+export interface CacheClearResult {
+  snapshotId: string;
+  freedBytes: number;
+  filesRemoved: number;
+}
+
+export interface AmdShaderCache {
+  adapter: string;
+  mode: string;
+}
