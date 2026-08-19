@@ -9,119 +9,163 @@ modification follows a fixed pipeline:
 
 **Detect → Snapshot → Apply → Verify → Record → Rollback.**
 
-## Status
+---
 
-- ✅ **Phase 0 — Foundation**: Tauri v2 shell, SQLite schema + migrations,
-  error model, elevation bootstrap, CI, scanner + dashboard skeleton.
-- ✅ **Phase 1 — System Scanner**: hardware + software scan with WMI
-  enrichment (GPU VRAM, physical disk health/type, motherboard/BIOS, OS build),
-  telemetry sampling, health badges.
-- 🚧 **Phase 2 — Snapshot & Recovery Engine**: snapshot create/list/delete +
-  retention, change journal, reverse-order rollback (registry + power domains),
-  snapshot diff. Remaining: System Restore point.
-- 🚧 **Phase 3 — System Cleanup**: safe-category scanner (temp, browser/GPU
-  shader caches, crash dumps, logs) with deny-list, snapshot-first deletion,
-  policy (keep-newest / age-based), and a bloatware/AppX module (PowerShell
-  enumeration + removal with a protected allowlist, removal-candidate and
-  caution lists, and provisioned-package removal to prevent reinstall).
-  Remaining: SoftwareDistribution + Recycle Bin categories, DISM component
-  cleanup.
-- 🚧 **Phase 4 — Process & RAM Management**: process analyzer with
-  REQUIRED/SAFE/UNKNOWN classification, kill + priority controls (never
-  REALTIME), gaming mode (boost game / lower background / restore on exit),
-  and CPU-affinity control. Remaining: per-process GPU (PDH).
-- 🚧 **Phase 5 — Power Management**: power scheme enumeration, Optix profiles
-  (Balanced / Competitive / Maximum — cloned plans with processor, PCIe ASPM
-  and USB selective-suspend AC values), snapshot-first apply + verify + reverse
-  rollback, and NIC power-saving disable (EEE, Green Ethernet, device power
-  management) as reversible registry changes. Remaining: processor idle-disable
-  preset.
-- 🚧 **Phase 6 — Startup & Service Manager**: service enumeration (state, start
-  type, binary path, description, delayed-auto-start) with REQUIRED/SAFE/UNKNOWN
-  classification and a hard never-flag list; start/stop and start-type controls;
-  Windows Search (WSearch) dedicated toggle; startup app enumeration (Run keys
-  + startup folders) with Task Manager `StartupApproved` disabled-state
-  awareness and reversible enable/disable. Remaining: scheduled-task
-  enumeration, publisher/signature verification.
-- 🚧 **Phase 7 — Network Optimization**: cross-platform UDP DNS benchmark
-  (median/p95/min latency + packet loss, curated public resolvers + current
-  DNS baseline), network status (adapters, current DNS, default gateway),
-  snapshot-first DNS apply via the adapter's `NameServer` registry value +
-  cache flush, and read-only TCP/IP parameters. Remaining: ICMP ping/jitter,
-  TCP tweak apply + one-click reset.
-- 🚧 **Phase 8 — GPU Management**: display-adapter summary (VRAM from WMI),
-  risk-tiered gaming toggles (HAGS, Game DVR, Game Bar capture, Memory
-  Integrity/VBS, Game Mode, MPO) with restart hints and snapshot-first
-  reversible apply, shader-cache inventory + safe clear (NVIDIA/AMD/DirectX,
-  symlink-safe, roots preserved), and AMD shader-cache mode read/write
-  (`UMD\ShaderCache` REG_BINARY). Remaining: per-process GPU (PDH), vendor
-  driver-level toggles.
-- 🚧 **Phase 9 — Game Profile System**: launcher detection (Steam `libraryfolders.vdf`
-  + `appmanifest_*.acf`, Epic `.item` manifests, Riot/Battle.net uninstall registry)
-  with a hand-rolled VDF parser and executable auto-resolution, the saved game
-  library (SQLite `games` + `game_profiles`), per-game profiles (CPU priority,
-  affinity mask, power/network/gpu profile, background lowering), and a
-  background game-mode watcher that auto-applies priority + affinity + background
-  lowering on launch and restores on exit. Remaining: scheduled-task/publisher
-  detection reuse, NVIDIA DRS per-game profile (Phase 8 follow-up).
-- 🚧 **Phase 10 — Benchmark System**: PresentMon CSV parsing with context-aware
-  frame-time percentile math (avg FPS, 1%/0.1% lows, p95, dropped frames),
-  deterministic config-hash for before/after grouping, PresentMon capture
-  runner (locates `PresentMon64.exe`, timed per-process capture), a
-  PresentMon-free system-stress run (CPU/RAM averages), benchmark history +
-  comparison, and a frame-time chart (series re-loaded from the saved CSV).
-  Remaining: bundle the PresentMon binary in `resources/`, GPU/PDH and latency
-  sampling during capture, ICMP ping/jitter.
-- 🚧 **Phase 11 — Crash Recovery**: Application Event Log scan (Event IDs 1000
-  Application Error / 1001 WER / 4101 display-driver TDR via EvtQuery/EvtNext/
-  EvtRender + XML parsing), WER `Report.wer` parsing, minidump discovery,
-  exception-code + faulting-module classification (NVIDIA/AMD/Intel/DirectX),
-  dedup across sources, and `CrashReport.zip` generation (`zip` crate) with a
-  size-capped minidump. Remaining: background event subscription (live watch),
-  game-session correlation via the Phase 9 watcher.
-- ✅ **Phase 12 — AI Diagnostics**: rule-based diagnostic engine (memory
-  pressure, disk fullness, memory-hungry processes, cloud-sync/updater CPU,
-  CPU/GPU bottlenecks from benchmark history, driver crashes/TDR, thermal,
-  background-app count) with confidence scoring, evidence strings, and ranked
-  findings — advisory only, nothing applied automatically.
+## What Optix does
 
-## Stack
+Optix fixes the Windows defaults that slow games down, cleans up what's safe to
+remove, and helps you measure the difference — then lets you undo any of it.
+
+A few honest ground rules up front:
+
+- **Nothing is permanent.** Every change is snapshot-first and reversible from
+  the Rollback Center.
+- **Nothing is deleted automatically.** Cleanup and bloatware removal always
+  require your explicit confirmation.
+- **Nothing is "fake".** Optix shows measured evidence (benchmarks, telemetry,
+  crash reports) instead of promising free FPS.
+- **Security stays on unless you choose otherwise.** Memory Integrity / VBS and
+  similar toggles are opt-in, clearly labeled, and reversible.
+
+## Features
+
+| Module | What it does |
+|--------|--------------|
+| **Dashboard** | Live CPU, memory, and network telemetry with trend charts. |
+| **System Scanner** | Full hardware + software inventory: CPU, GPU, RAM, disks (type + health), displays, OS build, running processes, and startup apps. |
+| **Snapshots** | Capture the state of every area Optix touches, before you change anything. |
+| **Rollback Center** | Inspect every tracked change, restore snapshots in reverse order, and diff two snapshots. |
+| **Cleanup** | Safely reclaim space from temp files, browser caches, GPU shader caches, crash dumps, and old logs — with a hard deny-list so it never touches protected system paths. |
+| **Bloatware** | Review preinstalled Store apps, with a protected allowlist (never flags core system or Xbox packages) and removal of provisioned copies so they don't reinstall. |
+| **Processes & RAM** | See every running process with a REQUIRED / SAFE / UNKNOWN classification, change priority (never REALTIME), and apply a gaming mode that boosts your game and lowers background apps. |
+| **Power** | Apply Optix power profiles (Balanced / Competitive / Maximum) cloned from built-ins, and disable network-adapter power saving — all reversible. |
+| **Startup & Services** | Review what runs at boot and in the background, with a hard never-flag list, plus a dedicated Windows Search toggle. |
+| **Network** | Benchmark public DNS resolvers (latency + packet loss) and apply the fastest one; inspect TCP/IP parameters. |
+| **GPU** | Review risk-tiered gaming toggles (HAGS, Game DVR, Memory Integrity/VBS, Game Mode, MPO), clear shader caches, and set the AMD shader-cache mode. |
+| **Game Profiles** | Auto-detect installed games (Steam, Epic, Riot, Battle.net), add games manually, and set per-game CPU priority, affinity, and power profile — applied automatically on launch. |
+| **Benchmarks** | Capture FPS with PresentMon (avg FPS, 1%/0.1% lows, frame-time chart) or run a system-stress benchmark, and compare runs before/after an optimization. |
+| **Crash Reports** | Scan the Windows Event Log, WER reports, and minidumps; classify crashes and export a `CrashReport.zip` for support. |
+| **Diagnostics** | Rule-based analysis with confidence scores and evidence — advisory only, never changes anything. |
+
+## Getting started
+
+### Requirements
+
+- **Windows 11** (primary) or **Windows 10** (secondary — both share the same
+  supported APIs).
+- Administrator privileges. Optix relaunches itself through UAC when it isn't
+  already elevated, because registry, services, power schemes, and process
+  controls all require admin.
+
+### Install & run
+
+1. Download the latest installer from the
+   [Releases](../../releases) page.
+2. Run the **NSIS** installer (`Optix_<version>_x64-setup.exe`).
+3. Launch Optix. On first run it asks for elevation — approve it.
+4. Before changing anything, create a snapshot from the **Snapshots** page.
+
+> **Tip:** Optix stores its database and snapshots under
+> `C:\ProgramData\Optix`. If you ever want to start fresh, that's the directory
+> to remove (do this while Optix is closed).
+
+## Honest expectations
+
+Not every tweak helps every game. Roughly, by measured impact:
+
+1. **Disable Memory Integrity / VBS** — the single biggest lever on Windows 11
+   (up to 5–15% in some titles), but a real security trade-off. Opt-in only.
+2. **Disable Game DVR / Game Bar background recording** — frees RAM and cuts
+   input latency.
+3. **Power plan** — High/Ultimate Performance or an Optix profile.
+4. **GPU driver settings + shader cache** — reduces stutter, not raw FPS.
+5. **Process priority/affinity during gaming** — a modest, real gain.
+6. **DNS selection** — helps launchers, logins, and matchmaking, but **not**
+   in-game ping once a connection is established.
+7. **TCP/IP tweaks** — mostly placebo on modern Windows; marked experimental.
+
+Use the **Benchmarks** page to measure before/after on the same scene rather
+than trusting the label.
+
+---
+
+## Contributing
+
+Optix is built as a Tauri app: a **Rust** backend with **React + TypeScript**
+frontend. Contributions are welcome — the section below gets you from clone to
+pull request.
+
+### Stack
 
 - **Frontend**: React 19 + TypeScript, Tailwind CSS v4, Vite, Recharts
 - **Backend**: Rust, Tauri v2, `sysinfo` (cross-platform scanner), `rusqlite`
   (bundled SQLite), `windows-sys` + `winreg` (Windows integration), `zip`
-  (crash report bundles)
+  (crash-report bundles)
 - **Database**: SQLite at `C:\ProgramData\Optix\optix.db`
 
-## Architecture
+### Prerequisites
+
+- [Node.js](https://nodejs.org) 20+ and npm
+- [Rust](https://rustup.rs) stable (MSRV 1.85)
+- On Linux: `webkit2gtk` and the system dependencies Tauri requires (see the
+  [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
+
+### Setup
+
+```bash
+git clone <this-repo>
+cd Optix
+npm install
+npm run tauri dev
+```
+
+On a Windows host, `npm run tauri dev` runs the full app (Windows integration
+included). On Linux it runs the UI with Windows-only modules stubbed — useful
+for frontend and engine work.
+
+### Project structure
 
 ```
 src/                     React frontend (Vite + Tailwind)
+  components/            one component per page (Dashboard, Cleanup, …)
+  lib/                   api.ts (typed invoke wrappers), types.ts, format helpers
 src-tauri/
   src/
     main.rs              elevation bootstrap + entry point
     lib.rs               module tree + command registration
-    error.rs             OptixError (thiserror, serialized to frontend)
-    commands/            Tauri commands (system.rs, processes.rs, …)
+    error.rs             OptixError (thiserror, serialized to the frontend)
+    commands/            Tauri commands — one file per feature area
+    engine/              platform-independent logic (cleanup, rollback, …)
+    models/              serde structs shared between commands and the frontend
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / bloatware / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher / benchmark / crash / diagnostics
-    models/              hardware / snapshot / optimization / cleanup / bloatware / power / network / process / services / gpu / games / benchmark / crash / diagnostics structs
-    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games, presentmon, crash, appx
+    win/                 #[cfg(windows)]-only integrations (registry, services, …)
 ```
 
-## Development
+### How it fits together
+
+- The frontend calls typed wrappers in `src/lib/api.ts`, which `invoke` Tauri
+  commands registered in `src-tauri/src/lib.rs`.
+- Commands live in `src-tauri/src/commands/`, orchestrate work in
+  `src-tauri/src/engine/`, and persist via `src-tauri/src/db/`.
+- Every struct returned to the frontend is in `src-tauri/src/models/` and uses
+  `#[serde(rename_all = "camelCase")]`; mirror it in `src/lib/types.ts`.
+- Windows-only code is gated behind `#[cfg(windows)]` with a non-Windows stub
+  so the crate still compiles on Linux.
+
+### Tests
 
 ```bash
-npm install
-npm run tauri dev          # runs a Linux build on Linux hosts
+# Backend (engine + db logic, runs on Linux)
+cd src-tauri && cargo test
+
+# Windows-target compile check (validates winreg/windows-sys FFI)
+cd src-tauri && cargo check --target x86_64-pc-windows-gnu
+
+# Frontend type-check + production build
+npm run build
 ```
 
-Windows-only modules are gated behind `#[cfg(windows)]` and Windows-only crates
-are declared under `[target.'cfg(windows)'.dependencies]`, so the project still
-compiles and runs on Linux for UI/engine development. Real Windows integration
-is verified in CI (`windows-latest`).
-
-## Building the Windows installer
+### Building the Windows installer
 
 From a Windows host (NSIS + MSI):
 
@@ -138,15 +182,43 @@ sudo apt install lld llvm clang nsis   # clang is needed for rusqlite's C build
 npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
 ```
 
-## Security model
-
-- Every mutation is snapshot-first and reversible via the rollback engine.
-- v1 runs as a single elevated process (the app relaunches itself through UAC
-  when not already elevated). A privileged-service split is the production plan.
-- Never: irreversible changes, auto-delete, permanent security-feature
-  changes, or REALTIME process priority.
-
-## CI
+### CI
 
 GitHub Actions runs backend tests on Linux and builds NSIS + MSI installers on
 `windows-latest`.
+
+### Roadmap / status
+
+Completed phases: Foundation, System Scanner, Power, Startup & Services,
+Network, GPU, Game Profiles, Benchmark, Crash Recovery, Diagnostics.
+
+In-progress (mostly done, with noted gaps):
+
+- **Snapshot & Recovery** — snapshot/rollback/diff done; remaining: System
+  Restore point.
+- **Cleanup** — safe-category scanner + bloatware done; remaining:
+  SoftwareDistribution + Recycle Bin categories, DISM component cleanup.
+- **Process & RAM** — classification, priority, gaming mode, affinity done;
+  remaining: per-process GPU (PDH).
+
+Known follow-ups across the codebase: ICMP ping/jitter, TCP-tweak apply +
+one-click reset, scheduled-task enumeration + publisher/signature
+verification, NVIDIA DRS per-game profiles, bundling the PresentMon binary, and
+a live crash-watch subscription.
+
+### Contributing guidelines
+
+- Use **conventional commits**: `feat:`, `fix:`, `refactor:`, `chore:`,
+  `docs:`, etc.
+- Keep changes focused and atomic; preserve existing behavior unless the change
+  is intentional.
+- Match existing patterns — new features follow
+  `models/ → engine/ → commands/ → registration → frontend types + api + page`.
+- Add unit tests for new pure logic (classifiers, parsers, math) and run the
+  checks above before opening a PR.
+- Never introduce irreversible changes, auto-delete, REALTIME priority, or
+  unprotected security-feature changes — the safety model is the point.
+
+## License
+
+See the [LICENSE](LICENSE) file.
