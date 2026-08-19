@@ -41,8 +41,13 @@ modification follows a fixed pipeline:
   + startup folders) with Task Manager `StartupApproved` disabled-state
   awareness and reversible enable/disable. Remaining: scheduled-task
   enumeration, publisher/signature verification.
-- ⬜ Phase 7–12 — Network, GPU, Game Profiles, Benchmark, Crash Recovery,
-  Diagnostics
+- 🚧 **Phase 7 — Network Optimization**: cross-platform UDP DNS benchmark
+  (median/p95/min latency + packet loss, curated public resolvers + current
+  DNS baseline), network status (adapters, current DNS, default gateway),
+  snapshot-first DNS apply via the adapter's `NameServer` registry value +
+  cache flush, and read-only TCP/IP parameters. Remaining: ICMP ping/jitter,
+  TCP tweak apply + one-click reset.
+- ⬜ Phase 8–12 — GPU, Game Profiles, Benchmark, Crash Recovery, Diagnostics
 
 ## Stack
 
@@ -62,9 +67,9 @@ src-tauri/
     error.rs             OptixError (thiserror, serialized to frontend)
     commands/            Tauri commands (system.rs, processes.rs, …)
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / snapshot / rollback / optimizer / power / processes / services
-    models/              hardware / snapshot / optimization / power / process / services structs
-    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, services, startup, process
+    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services
+    models/              hardware / snapshot / optimization / power / network / process / services structs
+    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process
 ```
 
 ## Development

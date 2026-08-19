@@ -1,5 +1,6 @@
 pub mod cleanup;
 pub mod hardware;
+pub mod network;
 pub mod optimization;
 pub mod power;
 pub mod process;

@@ -5,6 +5,7 @@ import {
   Gauge,
   Gamepad2,
   LayoutDashboard,
+  Network,
   Rocket,
   ScanSearch,
   Settings,
@@ -22,6 +23,7 @@ export type ViewId =
   | "processes"
   | "power"
   | "startup"
+  | "network"
   | "games"
   | "benchmarks"
   | "settings";
@@ -35,6 +37,7 @@ const NAV: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "processes", label: "Processes & RAM", icon: Cpu },
   { id: "power", label: "Power", icon: BatteryCharging },
   { id: "startup", label: "Startup & Services", icon: Rocket },
+  { id: "network", label: "Network", icon: Network },
   { id: "games", label: "Game Profiles", icon: Gamepad2 },
   { id: "benchmarks", label: "Benchmarks", icon: Gauge },
   { id: "settings", label: "Settings", icon: Settings },

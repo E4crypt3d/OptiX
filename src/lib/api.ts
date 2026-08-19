@@ -13,12 +13,17 @@ import type {
   PowerScheme,
   PriorityClass,
   ProcessDetail,
+  DnsApplyResult,
+  DnsBenchmarkResult,
+  DnsServer,
+  NetworkStatus,
   ServiceActionResult,
   ServiceInfo,
   Snapshot,
   StartupActionResult,
   StartupEntry,
   SystemStats,
+  TcpParameter,
   WSearchStatus,
 } from "./types";
 
@@ -153,4 +158,27 @@ export function setStartupEnabled(
   command: string,
 ): Promise<StartupActionResult> {
   return invoke<StartupActionResult>("set_startup_enabled", { location, enabled, command });
+}
+
+export function networkStatus(): Promise<NetworkStatus> {
+  return invoke<NetworkStatus>("network_status");
+}
+
+export function listDnsServers(): Promise<DnsServer[]> {
+  return invoke<DnsServer[]>("list_dns_servers");
+}
+
+export function benchmarkDns(
+  domains: string[],
+  queriesPerDomain: number,
+): Promise<DnsBenchmarkResult[]> {
+  return invoke<DnsBenchmarkResult[]>("benchmark_dns", { domains, queriesPerDomain });
+}
+
+export function applyDns(guid: string, servers: string[]): Promise<DnsApplyResult> {
+  return invoke<DnsApplyResult>("apply_dns", { guid, servers });
+}
+
+export function tcpParameters(): Promise<TcpParameter[]> {
+  return invoke<TcpParameter[]>("tcp_parameters");
 }

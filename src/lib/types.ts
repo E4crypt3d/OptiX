@@ -312,3 +312,45 @@ export interface WSearchStatus {
   running: boolean;
   startType: string;
 }
+
+export interface DnsServer {
+  name: string;
+  ip: string;
+  isCurrent: boolean;
+}
+
+export interface DnsBenchmarkResult {
+  name: string;
+  ip: string;
+  isCurrent: boolean;
+  medianMs: number | null;
+  p95Ms: number | null;
+  minMs: number | null;
+  lossPercent: number;
+  queries: number;
+  failures: number;
+}
+
+export interface NetworkAdapter {
+  name: string;
+  guid: string;
+  isActive: boolean;
+  dnsServers: string[];
+  dhcpEnabled: boolean;
+}
+
+export interface NetworkStatus {
+  adapters: NetworkAdapter[];
+  gateway: string | null;
+  currentDns: string[];
+}
+
+export interface TcpParameter {
+  name: string;
+  value: number | null;
+}
+
+export interface DnsApplyResult {
+  snapshotId: string;
+  changes: number;
+}

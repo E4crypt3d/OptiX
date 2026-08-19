@@ -6,6 +6,7 @@
 pub mod elevation;
 pub mod enrich;
 pub mod hardware;
+pub mod network;
 pub mod nic;
 pub mod os;
 pub mod power;

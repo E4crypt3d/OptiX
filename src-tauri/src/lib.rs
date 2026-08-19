@@ -53,6 +53,11 @@ pub fn run() {
             commands::services::set_wsearch,
             commands::services::list_startup,
             commands::services::set_startup_enabled,
+            commands::network::network_status,
+            commands::network::list_dns_servers,
+            commands::network::benchmark_dns,
+            commands::network::apply_dns,
+            commands::network::tcp_parameters,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
