@@ -7,6 +7,7 @@ import {
   restoreSnapshot,
 } from "../lib/api";
 import type { Snapshot, SnapshotStatus } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 function statusTone(status: SnapshotStatus): "emerald" | "violet" | "slate" {
@@ -33,7 +34,7 @@ export function Snapshots() {
     try {
       setSnapshots(await listSnapshots());
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }, []);
 
@@ -53,7 +54,7 @@ export function Snapshots() {
       setNotice("Snapshot created.");
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -70,7 +71,7 @@ export function Snapshots() {
       );
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusyId(null);
     }
@@ -85,7 +86,7 @@ export function Snapshots() {
       setNotice("Snapshot deleted.");
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusyId(null);
     }

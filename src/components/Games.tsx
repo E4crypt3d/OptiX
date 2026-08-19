@@ -22,6 +22,7 @@ import {
   saveGameProfile,
 } from "../lib/api";
 import type { DetectedGame, Game, GameProfile } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 const LAUNCHER_TONE: Record<string, "cyan" | "violet" | "emerald" | "amber" | "rose" | "slate"> = {
@@ -68,7 +69,7 @@ export function Games() {
       const g = await listGames();
       setGames(g);
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }, []);
 
@@ -95,7 +96,7 @@ export function Games() {
           : "No games found. Add one manually below.",
       );
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setScanning(false);
     }
@@ -109,7 +110,7 @@ export function Games() {
       setDetected((prev) => prev.filter((x) => x !== d));
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -126,7 +127,7 @@ export function Games() {
       setNotice("Game added.");
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -140,7 +141,7 @@ export function Games() {
       await removeGame(g.id);
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -164,7 +165,7 @@ export function Games() {
       );
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -178,7 +179,7 @@ export function Games() {
       setNotice(`Restored "${g.name}" to its previous state.`);
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -196,7 +197,7 @@ export function Games() {
       setDraft(p);
       setEditingId(g.id);
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }
 
@@ -211,7 +212,7 @@ export function Games() {
       setDraft(null);
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }

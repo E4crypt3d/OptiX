@@ -16,6 +16,7 @@ import type {
   ShaderCache,
 } from "../lib/types";
 import { formatBytes } from "../lib/format";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 function riskTone(risk: string): "emerald" | "amber" | "rose" {
@@ -51,7 +52,7 @@ export function Gpu() {
       setAmd(amdMode);
       setSelected(new Set(c.map((x) => x.id)));
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -76,7 +77,7 @@ export function Gpu() {
       setNotice(`Updated ${t.name}. Reversible via Rollback Center.`);
       await load();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -103,7 +104,7 @@ export function Gpu() {
       setNotice(`Freed ${formatBytes(r.freedBytes)}. Rebuilt on next launch.`);
       await load();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -118,7 +119,7 @@ export function Gpu() {
       setNotice(alwaysOn ? "AMD shader cache set to Always On." : "AMD shader cache set to Optimized.");
       await load();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }

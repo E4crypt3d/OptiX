@@ -10,6 +10,7 @@ import {
 } from "../lib/api";
 import type { BenchmarkResult, Game } from "../lib/types";
 import { formatBytes } from "../lib/format";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 import {
   CartesianGrid,
@@ -50,7 +51,7 @@ export function Benchmark() {
       setRuns(b);
       setGames(g);
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -87,7 +88,7 @@ export function Benchmark() {
       await refresh();
       if (r.id != null) await onChart(r.id);
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -104,7 +105,7 @@ export function Benchmark() {
       );
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }
@@ -133,7 +134,7 @@ export function Benchmark() {
       }
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }

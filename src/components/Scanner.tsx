@@ -13,6 +13,7 @@ import {
 import { scanSystem } from "../lib/api";
 import { formatBytes, formatFrequency } from "../lib/format";
 import type { HardwareInfo, ProcessInfo } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 type Tone = "slate" | "emerald" | "amber" | "violet" | "cyan" | "rose";
@@ -54,7 +55,7 @@ export function Scanner() {
     try {
       setInfo(await scanSystem());
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }

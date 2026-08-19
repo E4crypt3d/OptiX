@@ -12,6 +12,7 @@ import type {
   NetworkStatus,
   TcpParameter,
 } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 function ms(v: number | null): string {
@@ -42,7 +43,7 @@ export function Network() {
         return active?.guid ?? "";
       });
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -59,7 +60,7 @@ export function Network() {
     try {
       setResults(await benchmarkDns([], 3));
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setRunning(false);
     }
@@ -82,7 +83,7 @@ export function Network() {
       setNotice(`Applied ${server.ip}. Reversible via Rollback Center.`);
       await load();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setApplying(null);
     }

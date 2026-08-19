@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bug, FileArchive, RefreshCw } from "lucide-react";
 import { generateCrashReport, scanCrashes } from "../lib/api";
 import type { CrashReport } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 function severityTone(severity: string): "rose" | "amber" | "slate" {
@@ -34,7 +35,7 @@ export function CrashReports() {
     try {
       setCrashes(await scanCrashes());
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -61,7 +62,7 @@ export function CrashReports() {
       const path = await generateCrashReport(c);
       setNotice(`Crash report saved to ${path}`);
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }

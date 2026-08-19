@@ -3,6 +3,7 @@ import { RefreshCw, Trash2 } from "lucide-react";
 import { runCleanup, scanCleanup } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { CleanupCategory, CleanupResult } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 export function Cleanup() {
@@ -21,7 +22,7 @@ export function Cleanup() {
       setCategories(cats);
       setSelected(new Set(cats.filter((c) => c.safety === "safe").map((c) => c.id)));
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -56,7 +57,7 @@ export function Cleanup() {
       setResult(await runCleanup(ids));
       await rescan();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setRunning(false);
     }

@@ -9,6 +9,7 @@ import {
 } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { PriorityClass, ProcessClass, ProcessDetail } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 const CLASS_TONE: Record<ProcessClass, "rose" | "emerald" | "slate"> = {
@@ -41,7 +42,7 @@ export function Processes() {
     try {
       setProcesses(await listProcesses());
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -76,7 +77,7 @@ export function Processes() {
       setNotice(`Terminated ${p.name}.`);
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }
 
@@ -87,7 +88,7 @@ export function Processes() {
       setNotice(`${p.name} → ${priority}.`);
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }
 
@@ -112,7 +113,7 @@ export function Processes() {
       }
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }
 
@@ -126,7 +127,7 @@ export function Processes() {
       setBgPids(new Set());
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }
 

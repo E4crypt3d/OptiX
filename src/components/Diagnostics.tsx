@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import { runDiagnostics } from "../lib/api";
 import type { Diagnostic } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 function severityTone(severity: string): "rose" | "amber" | "slate" {
@@ -32,7 +33,7 @@ export function Diagnostics() {
     try {
       setFindings(await runDiagnostics());
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }

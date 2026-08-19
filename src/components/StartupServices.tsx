@@ -16,6 +16,7 @@ import type {
   StartupEntry,
   WSearchStatus,
 } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 type ClassFilter = "all" | ServiceClass;
@@ -61,7 +62,7 @@ export function StartupServices() {
       setStartup(st);
       setWsearchStatus(w);
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -97,7 +98,7 @@ export function StartupServices() {
       setNotice(r.changes > 0 ? msg : "No change was needed.");
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusy(null);
     }

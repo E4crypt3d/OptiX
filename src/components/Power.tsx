@@ -13,6 +13,7 @@ import type {
   PowerProfile,
   PowerScheme,
 } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 function nicFeatureBadges(adapter: NicAdapter) {
@@ -49,7 +50,7 @@ export function Power() {
       setProfiles(p);
       setAdapters(a);
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setLoading(false);
     }
@@ -73,7 +74,7 @@ export function Power() {
       );
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setBusyId(null);
     }
@@ -95,7 +96,7 @@ export function Power() {
       );
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     } finally {
       setNicBusy(false);
     }

@@ -7,6 +7,7 @@ import {
   restoreSnapshot,
 } from "../lib/api";
 import type { ChangeRecord, Snapshot } from "../lib/types";
+import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
 
 interface DiffEntry {
@@ -36,7 +37,7 @@ export function Rollback() {
     try {
       setSnapshots(await listSnapshots());
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }, []);
 
@@ -51,7 +52,7 @@ export function Rollback() {
     }
     listChanges(selectedId)
       .then(setChanges)
-      .catch((e) => setError(String(e)));
+      .catch((e) => setError(errMsg(e)));
   }, [selectedId]);
 
   async function onRestore() {
@@ -65,7 +66,7 @@ export function Rollback() {
       );
       await refresh();
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }
 
@@ -75,7 +76,7 @@ export function Rollback() {
     try {
       setDiff((await diffSnapshots(diffA, diffB)) as DiffEntry[]);
     } catch (e) {
-      setError(String(e));
+      setError(errMsg(e));
     }
   }
 
