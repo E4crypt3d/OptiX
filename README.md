@@ -61,7 +61,15 @@ modification follows a fixed pipeline:
   background game-mode watcher that auto-applies priority + affinity + background
   lowering on launch and restores on exit. Remaining: scheduled-task/publisher
   detection reuse, NVIDIA DRS per-game profile (Phase 8 follow-up).
-- ⬜ Phase 10–12 — Benchmark, Crash Recovery, Diagnostics
+- 🚧 **Phase 10 — Benchmark System**: PresentMon CSV parsing with context-aware
+  frame-time percentile math (avg FPS, 1%/0.1% lows, p95, dropped frames),
+  deterministic config-hash for before/after grouping, PresentMon capture
+  runner (locates `PresentMon64.exe`, timed per-process capture), a
+  PresentMon-free system-stress run (CPU/RAM averages), benchmark history +
+  comparison, and a frame-time chart (series re-loaded from the saved CSV).
+  Remaining: bundle the PresentMon binary in `resources/`, GPU/PDH and latency
+  sampling during capture, ICMP ping/jitter.
+- ⬜ Phase 11–12 — Crash Recovery, Diagnostics
 
 ## Stack
 
@@ -81,9 +89,9 @@ src-tauri/
     error.rs             OptixError (thiserror, serialized to frontend)
     commands/            Tauri commands (system.rs, processes.rs, …)
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher
-    models/              hardware / snapshot / optimization / power / network / process / services / gpu / games structs
-    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games
+    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher / benchmark
+    models/              hardware / snapshot / optimization / power / network / process / services / gpu / games / benchmark structs
+    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games, presentmon
 ```
 
 ## Development

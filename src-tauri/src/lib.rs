@@ -78,6 +78,11 @@ pub fn run() {
             commands::games::save_game_profile,
             commands::games::apply_game_profile,
             commands::games::restore_game_profile,
+            commands::benchmark::run_fps_benchmark,
+            commands::benchmark::run_stress_benchmark,
+            commands::benchmark::list_benchmarks,
+            commands::benchmark::delete_benchmark,
+            commands::benchmark::benchmark_frame_times,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

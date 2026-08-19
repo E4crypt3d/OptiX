@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 
 use crate::error::Result;
+use crate::models::benchmark::BenchmarkResult;
 use crate::models::games::GameProfile;
 use crate::models::hardware::HardwareSample;
 use crate::models::snapshot::{ChangeRecord, Snapshot, SnapshotStatus};
@@ -460,6 +461,69 @@ impl Database {
         Ok(())
     }
 
+    /// Insert a benchmark run (scalar columns only; frame series is transient).
+    pub fn insert_benchmark(&self, b: &BenchmarkResult) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO benchmarks
+                (game_id, game_name, started_at, duration_ms, avg_fps, p1_fps, p01_fps,
+                 avg_frame_time_ms, p95_frame_time_ms, cpu_avg, gpu_avg, ram_avg_mb,
+                 latency_ms, config_hash, csv_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            rusqlite::params![
+                b.game_id,
+                b.game_name,
+                b.started_at,
+                b.duration_ms,
+                b.avg_fps,
+                b.p1_fps,
+                b.p01_fps,
+                b.avg_frame_time_ms,
+                b.p95_frame_time_ms,
+                b.cpu_avg,
+                b.gpu_avg,
+                b.ram_avg_mb,
+                b.latency_ms,
+                b.config_hash,
+                b.csv_path,
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// List benchmark runs, newest first (scalars only).
+    pub fn list_benchmarks(&self) -> Result<Vec<BenchmarkResult>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, game_id, game_name, started_at, duration_ms, avg_fps, p1_fps, p01_fps,
+                    avg_frame_time_ms, p95_frame_time_ms, cpu_avg, gpu_avg, ram_avg_mb,
+                    latency_ms, config_hash, csv_path
+             FROM benchmarks ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map([], benchmark_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Fetch a single benchmark run by id.
+    pub fn get_benchmark(&self, id: i64) -> Result<Option<BenchmarkResult>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, game_id, game_name, started_at, duration_ms, avg_fps, p1_fps, p01_fps,
+                    avg_frame_time_ms, p95_frame_time_ms, cpu_avg, gpu_avg, ram_avg_mb,
+                    latency_ms, config_hash, csv_path
+             FROM benchmarks WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map([id], benchmark_from_row)?;
+        rows.next().transpose().map_err(Into::into)
+    }
+
+    /// Delete a benchmark run.
+    pub fn delete_benchmark(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM benchmarks WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     /// List a snapshot's changes in application order.
     pub fn list_changes(&self, snapshot_id: &str) -> Result<Vec<ChangeRecord>> {
         let conn = self.conn.lock().unwrap();
@@ -488,6 +552,30 @@ impl Database {
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
+}
+
+fn benchmark_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<BenchmarkResult> {
+    Ok(BenchmarkResult {
+        id: Some(row.get(0)?),
+        game_id: row.get(1)?,
+        game_name: row.get(2)?,
+        started_at: row.get(3)?,
+        duration_ms: row.get(4)?,
+        avg_fps: row.get(5)?,
+        p1_fps: row.get(6)?,
+        p01_fps: row.get(7)?,
+        avg_frame_time_ms: row.get(8)?,
+        p95_frame_time_ms: row.get(9)?,
+        cpu_avg: row.get(10)?,
+        gpu_avg: row.get(11)?,
+        ram_avg_mb: row.get(12)?,
+        latency_ms: row.get(13)?,
+        config_hash: row.get(14)?,
+        csv_path: row.get(15)?,
+        frame_times_ms: Vec::new(),
+        dropped_frames: 0,
+        frame_count: 0,
+    })
 }
 
 fn snapshot_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Snapshot> {

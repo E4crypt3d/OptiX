@@ -1,3 +1,4 @@
+pub mod benchmark;
 pub mod cleanup;
 pub mod games;
 pub mod gpu;

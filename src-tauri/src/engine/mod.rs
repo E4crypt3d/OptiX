@@ -1,3 +1,4 @@
+pub mod benchmark;
 pub mod cleanup;
 pub mod game_watcher;
 pub mod games;

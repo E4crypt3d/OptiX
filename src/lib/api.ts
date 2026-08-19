@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   ChangeRecord,
+  BenchmarkResult,
   CleanupCategory,
   CleanupResult,
   DetectedGame,
@@ -261,4 +262,34 @@ export function applyGameProfile(gameId: number): Promise<GameProfileApplyResult
 
 export function restoreGameProfile(gameId: number): Promise<number> {
   return invoke<number>("restore_game_profile", { gameId });
+}
+
+export function runFpsBenchmark(
+  gameId: number | null,
+  gameName: string | null,
+  exeName: string,
+  durationSecs: number,
+): Promise<BenchmarkResult> {
+  return invoke<BenchmarkResult>("run_fps_benchmark", {
+    gameId,
+    gameName,
+    exeName,
+    durationSecs,
+  });
+}
+
+export function runStressBenchmark(durationSecs: number): Promise<BenchmarkResult> {
+  return invoke<BenchmarkResult>("run_stress_benchmark", { durationSecs });
+}
+
+export function listBenchmarks(): Promise<BenchmarkResult[]> {
+  return invoke<BenchmarkResult[]>("list_benchmarks");
+}
+
+export function deleteBenchmark(id: number): Promise<void> {
+  return invoke<void>("delete_benchmark", { id });
+}
+
+export function benchmarkFrameTimes(id: number): Promise<number[]> {
+  return invoke<number[]>("benchmark_frame_times", { id });
 }

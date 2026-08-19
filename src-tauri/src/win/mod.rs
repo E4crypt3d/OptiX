@@ -12,6 +12,7 @@ pub mod network;
 pub mod nic;
 pub mod os;
 pub mod power;
+pub mod presentmon;
 pub mod process;
 pub mod registry;
 pub mod services;

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Benchmark } from "./components/Benchmark";
 import { Cleanup } from "./components/Cleanup";
 import { Dashboard } from "./components/Dashboard";
 import { Games } from "./components/Games";
@@ -14,10 +15,6 @@ import { Sidebar, type ViewId } from "./components/Sidebar";
 import { Snapshots } from "./components/Snapshots";
 
 const PLACEHOLDERS: Record<string, { title: string; description: string }> = {
-  benchmarks: {
-    title: "Benchmarks",
-    description: "Measure FPS and latency before and after optimization.",
-  },
   settings: {
     title: "Settings",
     description: "Configure Optix behavior and safety preferences.",
@@ -43,6 +40,7 @@ export default function App() {
           {view === "network" && <Network />}
           {view === "gpu" && <Gpu />}
           {view === "games" && <Games />}
+          {view === "benchmarks" && <Benchmark />}
           {PLACEHOLDERS[view] && (
             <Placeholder
               title={PLACEHOLDERS[view].title}

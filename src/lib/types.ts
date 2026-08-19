@@ -446,3 +446,25 @@ export interface GameProfileApplyResult {
   lowered: PriorityChange[];
   affinityApplied: AffinityChange[];
 }
+
+export interface BenchmarkResult {
+  id: number | null;
+  gameId: number | null;
+  gameName: string | null;
+  startedAt: number;
+  durationMs: number;
+  avgFps: number | null;
+  p1Fps: number | null;
+  p01Fps: number | null;
+  avgFrameTimeMs: number | null;
+  p95FrameTimeMs: number | null;
+  cpuAvg: number | null;
+  gpuAvg: number | null;
+  ramAvgMb: number | null;
+  latencyMs: number | null;
+  configHash: string | null;
+  csvPath: string | null;
+  frameTimesMs: number[];
+  droppedFrames: number;
+  frameCount: number;
+}
