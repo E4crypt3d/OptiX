@@ -32,7 +32,8 @@ pub struct ApplyOutcome {
     pub affinity: Vec<AffinityChange>,
 }
 
-/// Shared watcher state. Holds its own read-only DB connection (WAL allows a\n/// second connection in-process) and the set of currently-boosted games.
+/// Shared watcher state. Holds its own read-only DB connection (WAL allows a
+/// second connection in-process) and the set of currently-boosted games.
 pub struct GameWatcher {
     db: Database,
     active: Mutex<HashMap<i64, Vec<WatchedProcess>>>,

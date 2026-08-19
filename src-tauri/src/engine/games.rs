@@ -55,7 +55,8 @@ enum Token {
     Close,
 }
 
-/// Parse a Valve KeyValues document into a tree. Handles nested objects, line\n/// comments (`//`), escapes, and an optional UTF-8 BOM.
+/// Parse a Valve KeyValues document into a tree. Handles nested objects, line
+/// comments (`//`), escapes, and an optional UTF-8 BOM.
 pub fn parse_vdf(text: &str) -> std::result::Result<VdfValue, String> {
     let text = text.trim_start_matches('\u{feff}');
     let tokens = tokenize(text)?;
