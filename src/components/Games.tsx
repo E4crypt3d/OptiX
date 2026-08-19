@@ -1,5 +1,7 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
 import {
+  FolderOpen,
   Gamepad2,
   Play,
   Plus,
@@ -130,6 +132,19 @@ export function Games() {
       setError(errMsg(e));
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function onBrowseExe() {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      title: "Select game executable",
+      filters: [{ name: "Executables", extensions: ["exe", "cmd", "bat"] }],
+    });
+    if (typeof selected === "string") {
+      setManualExe(selected);
+      setError(null);
     }
   }
 
@@ -313,6 +328,14 @@ export function Games() {
             placeholder="Executable path (e.g. C:\\Games\\r5apex.exe)"
             className="flex-1 min-w-64 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none"
           />
+          <button
+            onClick={onBrowseExe}
+            title="Browse for the game executable"
+            className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            Browse…
+          </button>
           <button
             onClick={onAddManual}
             disabled={busy === "manual" || !manualName.trim() || !manualExe.trim()}
