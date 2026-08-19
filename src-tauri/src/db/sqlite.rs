@@ -147,10 +147,30 @@ CREATE TABLE IF NOT EXISTS crash_reports (
 
 fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version < 1 {
-        conn.execute_batch(SCHEMA_V1)?;
-        conn.pragma_update(None, "user_version", 1)?;
+    // `CREATE TABLE IF NOT EXISTS` is idempotent, so run it unconditionally:
+    // it builds fresh databases and backfills tables added after an existing
+    // database was first created.
+    conn.execute_batch(SCHEMA_V1)?;
+    // Columns introduced after a table's first release are not added by
+    // `CREATE TABLE IF NOT EXISTS`, so backfill them explicitly.
+    ensure_column(conn, "snapshots", "reason", "TEXT")?;
+    ensure_column(conn, "games", "app_id", "TEXT")?;
+    ensure_column(conn, "benchmarks", "game_name", "TEXT")?;
+    conn.pragma_update(None, "user_version", 1)?;
+    Ok(())
+}
+
+/// Add `table.column` with the given type when it does not already exist.
+fn ensure_column(conn: &Connection, table: &str, column: &str, decl: &str) -> Result<()> {
+    let exists = {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let names = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        names.iter().any(|name| name == column)
+    };
+    if !exists {
+        conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"), [])?;
     }
     Ok(())
 }
@@ -706,5 +726,22 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn migration_backfills_columns_on_existing_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Simulate a database created before these columns were introduced.
+        conn.execute_batch(
+            "CREATE TABLE snapshots (id TEXT PRIMARY KEY, name TEXT, created_at INTEGER, restored_at INTEGER, status TEXT);
+             CREATE TABLE games (id INTEGER PRIMARY KEY, name TEXT, launcher TEXT, install_path TEXT, executable TEXT);
+             CREATE TABLE benchmarks (id INTEGER PRIMARY KEY, game_id INTEGER, started_at INTEGER, duration_ms INTEGER);",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        // The backfilled columns are now queryable.
+        conn.execute("SELECT reason FROM snapshots", []).unwrap();
+        conn.execute("SELECT app_id FROM games", []).unwrap();
+        conn.execute("SELECT game_name FROM benchmarks", []).unwrap();
     }
 }
