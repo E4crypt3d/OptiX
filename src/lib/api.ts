@@ -3,6 +3,10 @@ import type {
   ChangeRecord,
   CleanupCategory,
   CleanupResult,
+  DetectedGame,
+  Game,
+  GameProfile,
+  GameProfileApplyResult,
   GamingModeResult,
   HardwareInfo,
   HardwareSample,
@@ -215,4 +219,46 @@ export function getAmdShaderCache(): Promise<AmdShaderCache> {
 
 export function setAmdShaderCache(alwaysOn: boolean): Promise<AmdShaderCache> {
   return invoke<AmdShaderCache>("set_amd_shader_cache", { alwaysOn });
+}
+
+export function detectGames(): Promise<DetectedGame[]> {
+  return invoke<DetectedGame[]>("detect_games");
+}
+
+export function listGames(): Promise<Game[]> {
+  return invoke<Game[]>("list_games");
+}
+
+export function addGame(
+  launcher: string,
+  appId: string | null,
+  name: string,
+  installPath: string,
+  executable: string,
+): Promise<Game> {
+  return invoke<Game>("add_game", { launcher, appId, name, installPath, executable });
+}
+
+export function addManualGame(name: string, executable: string): Promise<Game> {
+  return invoke<Game>("add_manual_game", { name, executable });
+}
+
+export function removeGame(id: number): Promise<void> {
+  return invoke<void>("remove_game", { id });
+}
+
+export function getGameProfile(gameId: number): Promise<GameProfile> {
+  return invoke<GameProfile>("get_game_profile", { gameId });
+}
+
+export function saveGameProfile(profile: GameProfile): Promise<void> {
+  return invoke<void>("save_game_profile", { profile });
+}
+
+export function applyGameProfile(gameId: number): Promise<GameProfileApplyResult> {
+  return invoke<GameProfileApplyResult>("apply_game_profile", { gameId });
+}
+
+export function restoreGameProfile(gameId: number): Promise<number> {
+  return invoke<number>("restore_game_profile", { gameId });
 }

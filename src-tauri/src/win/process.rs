@@ -79,6 +79,63 @@ pub fn set_priority(_pid: u32, _class: PriorityClass) -> Result<()> {
     Err(OptixError::UnsupportedPlatform("process priority".into()))
 }
 
+/// Read a process's current CPU-affinity bitmask.
+#[cfg(windows)]
+pub fn get_affinity(pid: u32) -> Option<u64> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        GetProcessAffinityMask, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let handle = unsafe { open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION) }?;
+    let mut process_mask: usize = 0;
+    let mut system_mask: usize = 0;
+    let ok = unsafe { GetProcessAffinityMask(handle as _, &mut process_mask, &mut system_mask) };
+    unsafe { CloseHandle(handle as _) };
+    if ok == 0 {
+        return None;
+    }
+    Some(process_mask as u64)
+}
+
+#[cfg(not(windows))]
+pub fn get_affinity(_pid: u32) -> Option<u64> {
+    None
+}
+
+/// Change a process's CPU-affinity bitmask. Refuses a zero mask.
+#[cfg(windows)]
+pub fn set_affinity(pid: u32, mask: u64) -> Result<()> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        SetProcessAffinityMask, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+    };
+
+    if mask == 0 {
+        return Err(OptixError::InvalidState(
+            "CPU affinity mask must be non-zero".into(),
+        ));
+    }
+
+    let access = PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION;
+    let handle = unsafe { open_process(pid, access) }
+        .ok_or_else(|| OptixError::Windows(format!("cannot open process {pid}")))?;
+
+    let ok = unsafe { SetProcessAffinityMask(handle as _, mask as usize) };
+    unsafe { CloseHandle(handle as _) };
+    if ok == 0 {
+        return Err(OptixError::Windows(format!(
+            "SetProcessAffinityMask failed for pid {pid}"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn set_affinity(_pid: u32, _mask: u64) -> Result<()> {
+    Err(OptixError::UnsupportedPlatform("CPU affinity".into()))
+}
+
 /// Terminate a process. Only callable on processes the caller already
 /// classified as safe/unknown and the user confirmed.
 #[cfg(windows)]

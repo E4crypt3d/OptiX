@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Cleanup } from "./components/Cleanup";
 import { Dashboard } from "./components/Dashboard";
+import { Games } from "./components/Games";
 import { Gpu } from "./components/Gpu";
 import { Network } from "./components/Network";
 import { Placeholder } from "./components/Placeholder";
@@ -13,10 +14,6 @@ import { Sidebar, type ViewId } from "./components/Sidebar";
 import { Snapshots } from "./components/Snapshots";
 
 const PLACEHOLDERS: Record<string, { title: string; description: string }> = {
-  games: {
-    title: "Game Profiles",
-    description: "Detected games and their per-game optimization profiles.",
-  },
   benchmarks: {
     title: "Benchmarks",
     description: "Measure FPS and latency before and after optimization.",
@@ -45,6 +42,7 @@ export default function App() {
           {view === "startup" && <StartupServices />}
           {view === "network" && <Network />}
           {view === "gpu" && <Gpu />}
+          {view === "games" && <Games />}
           {PLACEHOLDERS[view] && (
             <Placeholder
               title={PLACEHOLDERS[view].title}

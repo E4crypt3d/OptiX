@@ -5,6 +5,7 @@
 
 pub mod elevation;
 pub mod enrich;
+pub mod games;
 pub mod gpu;
 pub mod hardware;
 pub mod network;

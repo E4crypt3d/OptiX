@@ -20,6 +20,10 @@ pub fn run() {
             app.manage(db);
             app.manage(MonitorState::new());
             app.manage(OptimizerState::new());
+            // Game-mode watcher runs on its own read-only DB connection and
+            // auto-applies/restores enabled game profiles on launch/exit.
+            let watcher = engine::game_watcher::GameWatcher::spawn(Database::open()?);
+            app.manage(watcher);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -65,6 +69,15 @@ pub fn run() {
             commands::gpu::clear_shader_caches,
             commands::gpu::get_amd_shader_cache,
             commands::gpu::set_amd_shader_cache,
+            commands::games::detect_games,
+            commands::games::list_games,
+            commands::games::add_game,
+            commands::games::add_manual_game,
+            commands::games::remove_game,
+            commands::games::get_game_profile,
+            commands::games::save_game_profile,
+            commands::games::apply_game_profile,
+            commands::games::restore_game_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

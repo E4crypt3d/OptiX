@@ -25,9 +25,8 @@ modification follows a fixed pipeline:
   SoftwareDistribution + Recycle Bin categories, DISM component cleanup.
 - 🚧 **Phase 4 — Process & RAM Management**: process analyzer with
   REQUIRED/SAFE/UNKNOWN classification, kill + priority controls (never
-  REALTIME), gaming mode (boost game / lower background / restore on exit).
-  Remaining: per-process GPU (PDH), CPU affinity, automatic game-detection
-  watcher (Phase 9 integration).
+  REALTIME), gaming mode (boost game / lower background / restore on exit),
+  and CPU-affinity control. Remaining: per-process GPU (PDH).
 - 🚧 **Phase 5 — Power Management**: power scheme enumeration, Optix profiles
   (Balanced / Competitive / Maximum — cloned plans with processor, PCIe ASPM
   and USB selective-suspend AC values), snapshot-first apply + verify + reverse
@@ -54,7 +53,15 @@ modification follows a fixed pipeline:
   symlink-safe, roots preserved), and AMD shader-cache mode read/write
   (`UMD\ShaderCache` REG_BINARY). Remaining: per-process GPU (PDH), vendor
   driver-level toggles.
-- ⬜ Phase 9–12 — Game Profiles, Benchmark, Crash Recovery, Diagnostics
+- 🚧 **Phase 9 — Game Profile System**: launcher detection (Steam `libraryfolders.vdf`
+  + `appmanifest_*.acf`, Epic `.item` manifests, Riot/Battle.net uninstall registry)
+  with a hand-rolled VDF parser and executable auto-resolution, the saved game
+  library (SQLite `games` + `game_profiles`), per-game profiles (CPU priority,
+  affinity mask, power/network/gpu profile, background lowering), and a
+  background game-mode watcher that auto-applies priority + affinity + background
+  lowering on launch and restores on exit. Remaining: scheduled-task/publisher
+  detection reuse, NVIDIA DRS per-game profile (Phase 8 follow-up).
+- ⬜ Phase 10–12 — Benchmark, Crash Recovery, Diagnostics
 
 ## Stack
 
@@ -74,9 +81,9 @@ src-tauri/
     error.rs             OptixError (thiserror, serialized to frontend)
     commands/            Tauri commands (system.rs, processes.rs, …)
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu
-    models/              hardware / snapshot / optimization / power / network / process / services / gpu structs
-    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu
+    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher
+    models/              hardware / snapshot / optimization / power / network / process / services / gpu / games structs
+    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games
 ```
 
 ## Development

@@ -1,4 +1,6 @@
 pub mod cleanup;
+pub mod game_watcher;
+pub mod games;
 pub mod gpu;
 pub mod network;
 pub mod optimizer;

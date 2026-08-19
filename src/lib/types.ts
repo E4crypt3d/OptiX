@@ -397,3 +397,52 @@ export interface AmdShaderCache {
   adapter: string;
   mode: string;
 }
+
+export interface DetectedGame {
+  name: string;
+  launcher: string;
+  appId: string | null;
+  installPath: string;
+  executable: string;
+}
+
+export interface Game {
+  id: number;
+  name: string;
+  launcher: string;
+  appId: string | null;
+  installPath: string;
+  executable: string;
+  exeName: string;
+  lastPlayed: number | null;
+  detectedAt: number | null;
+  running: boolean;
+  pids: number[];
+  boosted: boolean;
+}
+
+export interface GameProfile {
+  gameId: number;
+  cpuPriority: string;
+  affinityMask: string | null;
+  powerProfile: string;
+  networkProfile: string;
+  cleanupBg: boolean;
+  gpuProfile: string | null;
+  enabled: boolean;
+}
+
+export interface AffinityChange {
+  pid: number;
+  name: string;
+  from: number | null;
+  to: number;
+}
+
+export interface GameProfileApplyResult {
+  snapshotId: string | null;
+  powerApplied: string | null;
+  boosted: PriorityChange[];
+  lowered: PriorityChange[];
+  affinityApplied: AffinityChange[];
+}

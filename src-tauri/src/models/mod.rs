@@ -1,4 +1,5 @@
 pub mod cleanup;
+pub mod games;
 pub mod gpu;
 pub mod hardware;
 pub mod network;

@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 
 use crate::error::Result;
+use crate::models::games::GameProfile;
 use crate::models::hardware::HardwareSample;
 use crate::models::snapshot::{ChangeRecord, Snapshot, SnapshotStatus};
 
@@ -157,6 +158,19 @@ fn migrate(conn: &Connection) -> Result<()> {
 /// commands via `tauri::State`.
 pub struct Database {
     conn: Mutex<Connection>,
+}
+
+/// A row from the `games` table (live running state is annotated later by
+/// `engine::games`).
+pub struct GameRow {
+    pub id: i64,
+    pub name: String,
+    pub launcher: String,
+    pub app_id: Option<String>,
+    pub install_path: String,
+    pub executable: String,
+    pub last_played: Option<i64>,
+    pub detected_at: Option<i64>,
 }
 
 impl Database {
@@ -321,6 +335,129 @@ impl Database {
             ],
         )?;
         Ok(conn.last_insert_rowid())
+    }
+
+    /// Insert a game into the library.
+    pub fn insert_game(
+        &self,
+        name: &str,
+        launcher: &str,
+        app_id: Option<&str>,
+        install_path: &str,
+        executable: &str,
+        detected_at: i64,
+    ) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO games (name, launcher, app_id, install_path, executable, last_played, detected_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6)",
+            rusqlite::params![name, launcher, app_id, install_path, executable, detected_at],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// List all games, sorted by name.
+    pub fn list_games(&self) -> Result<Vec<GameRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, launcher, app_id, install_path, executable, last_played, detected_at
+             FROM games ORDER BY name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(GameRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                launcher: row.get(2)?,
+                app_id: row.get(3)?,
+                install_path: row.get(4)?,
+                executable: row.get(5)?,
+                last_played: row.get(6)?,
+                detected_at: row.get(7)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Fetch a single game by id.
+    pub fn get_game(&self, id: i64) -> Result<Option<GameRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, launcher, app_id, install_path, executable, last_played, detected_at
+             FROM games WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map([id], |row| {
+            Ok(GameRow {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                launcher: row.get(2)?,
+                app_id: row.get(3)?,
+                install_path: row.get(4)?,
+                executable: row.get(5)?,
+                last_played: row.get(6)?,
+                detected_at: row.get(7)?,
+            })
+        })?;
+        rows.next().transpose().map_err(Into::into)
+    }
+
+    /// Delete a game (its profile is removed via ON DELETE CASCADE).
+    pub fn delete_game(&self, id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM games WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Fetch a game's profile, if one has been saved.
+    pub fn get_game_profile(&self, game_id: i64) -> Result<Option<GameProfile>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT game_id, cpu_priority, affinity_mask, power_profile, network_profile,
+                    cleanup_bg, gpu_profile, enabled
+             FROM game_profiles WHERE game_id = ?1",
+        )?;
+        let mut rows = stmt.query_map([game_id], |row| {
+            Ok(GameProfile {
+                game_id: row.get(0)?,
+                cpu_priority: row.get(1)?,
+                affinity_mask: row.get(2)?,
+                power_profile: row.get(3)?,
+                network_profile: row.get(4)?,
+                cleanup_bg: row.get(5)?,
+                gpu_profile: row.get(6)?,
+                enabled: row.get(7)?,
+            })
+        })?;
+        rows.next().transpose().map_err(Into::into)
+    }
+
+    /// Insert or update a game profile.
+    pub fn save_game_profile(&self, p: &GameProfile) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO game_profiles
+                (game_id, cpu_priority, affinity_mask, power_profile, network_profile,
+                 cleanup_bg, gpu_profile, enabled)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(game_id) DO UPDATE SET
+                cpu_priority = excluded.cpu_priority,
+                affinity_mask = excluded.affinity_mask,
+                power_profile = excluded.power_profile,
+                network_profile = excluded.network_profile,
+                cleanup_bg = excluded.cleanup_bg,
+                gpu_profile = excluded.gpu_profile,
+                enabled = excluded.enabled",
+            rusqlite::params![
+                p.game_id,
+                p.cpu_priority,
+                p.affinity_mask,
+                p.power_profile,
+                p.network_profile,
+                p.cleanup_bg,
+                p.gpu_profile,
+                p.enabled,
+            ],
+        )?;
+        Ok(())
     }
 
     /// List a snapshot's changes in application order.
