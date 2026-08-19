@@ -5,6 +5,14 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-08-19
+
+### Added
+
+- **File browser for game executable selection**: Browse button in the manual
+  game entry form opens a native file picker filtered to .exe/.cmd/.bat files,
+  using `tauri-plugin-dialog` for cross-platform file selection.
+
 ## [0.3.0] - 2026-08-19
 
 ### Added
