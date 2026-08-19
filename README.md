@@ -76,7 +76,11 @@ modification follows a fixed pipeline:
   dedup across sources, and `CrashReport.zip` generation (`zip` crate) with a
   size-capped minidump. Remaining: background event subscription (live watch),
   game-session correlation via the Phase 9 watcher.
-- ⬜ Phase 12 — AI Diagnostics
+- ✅ **Phase 12 — AI Diagnostics**: rule-based diagnostic engine (memory
+  pressure, disk fullness, memory-hungry processes, cloud-sync/updater CPU,
+  CPU/GPU bottlenecks from benchmark history, driver crashes/TDR, thermal,
+  background-app count) with confidence scoring, evidence strings, and ranked
+  findings — advisory only, nothing applied automatically.
 
 ## Stack
 
@@ -97,8 +101,8 @@ src-tauri/
     error.rs             OptixError (thiserror, serialized to frontend)
     commands/            Tauri commands (system.rs, processes.rs, …)
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher / benchmark / crash
-    models/              hardware / snapshot / optimization / power / network / process / services / gpu / games / benchmark / crash structs
+    engine/              cleanup / snapshot / rollback / optimizer / power / network / processes / services / gpu / games / game_watcher / benchmark / crash / diagnostics
+    models/              hardware / snapshot / optimization / power / network / process / services / gpu / games / benchmark / crash / diagnostics structs
     win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, network, services, startup, process, gpu, games, presentmon, crash
 ```
 

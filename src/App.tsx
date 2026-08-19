@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Benchmark } from "./components/Benchmark";
 import { Cleanup } from "./components/Cleanup";
 import { CrashReports } from "./components/CrashReports";
+import { Diagnostics } from "./components/Diagnostics";
 import { Dashboard } from "./components/Dashboard";
 import { Games } from "./components/Games";
 import { Gpu } from "./components/Gpu";
@@ -43,6 +44,7 @@ export default function App() {
           {view === "games" && <Games />}
           {view === "benchmarks" && <Benchmark />}
           {view === "crash" && <CrashReports />}
+          {view === "diagnostics" && <Diagnostics />}
           {PLACEHOLDERS[view] && (
             <Placeholder
               title={PLACEHOLDERS[view].title}

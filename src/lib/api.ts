@@ -6,6 +6,7 @@ import type {
   CleanupResult,
   CrashReport,
   DetectedGame,
+  Diagnostic,
   Game,
   GameProfile,
   GameProfileApplyResult,
@@ -301,4 +302,8 @@ export function scanCrashes(): Promise<CrashReport[]> {
 
 export function generateCrashReport(crash: CrashReport): Promise<string> {
   return invoke<string>("generate_crash_report", { crash });
+}
+
+export function runDiagnostics(): Promise<Diagnostic[]> {
+  return invoke<Diagnostic[]>("run_diagnostics");
 }

@@ -1,4 +1,9 @@
-//! Phase 12 — AI Diagnostics (rule-based).\n//!\n//! No random changes: a pure, deterministic rule engine scores telemetry,\n//! process, benchmark, and crash evidence into ranked findings with confidence\n//! levels. Every finding carries the specific evidence and a recommendation;\n//! nothing is applied automatically.
+//! Phase 12 — AI Diagnostics (rule-based).
+//!
+//! No random changes: a pure, deterministic rule engine scores telemetry,
+//! process, benchmark, and crash evidence into ranked findings with confidence
+//! levels. Every finding carries the specific evidence and a recommendation;
+//! nothing is applied automatically.
 
 use crate::engine::processes::classify;
 use crate::models::diagnostics::Diagnostic;
@@ -10,8 +15,6 @@ pub struct ProcessSnapshot {
     pub name: String,
     pub cpu_usage: f32,
     pub memory_bytes: u64,
-    pub disk_read_bytes: u64,
-    pub disk_written_bytes: u64,
 }
 
 /// A benchmark run's headline numbers (FPS / CPU / GPU averages).
@@ -77,9 +80,11 @@ fn diag(
 }
 
 /// Run every rule and return findings ranked by severity then confidence.
-pub fn diagnose(input: &DiagnosticInput) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
+pub fn diagnose(input: &DiagnosticInput) -> Vec<Diagnostic> {    let mut out = Vec::new();
     if let Some(d) = memory_pressure(input) {
+        out.push(d);
+    }
+    if let Some(d) = memory_hog(input) {
         out.push(d);
     }
     if let Some(d) = disk_full(input) {
@@ -96,16 +101,21 @@ pub fn diagnose(input: &DiagnosticInput) -> Vec<Diagnostic> {
     }
     if let Some(d) = gpu_bottleneck(input) {
         out.push(d);
-    }
-    if let Some(d) = driver_crash(input) {
+    }    if let Some(d) = driver_crash(input) {
         out.push(d);
     }
     if let Some(d) = thermal(input) {
         out.push(d);
     }
-    if let Some(d) = background_apps(input) {
+    if let Some(d) = high_cpu(input) {
         out.push(d);
     }
+    if let Some(d) = gpu_saturated(input) {
+        out.push(d);
+    }
+    if let Some(d) = background_apps(input) {
+        out.push(d);
+}
     out.sort_by(|a, b| {
         severity_rank(&b.severity)
             .cmp(&severity_rank(&a.severity))
@@ -133,6 +143,28 @@ fn memory_pressure(input: &DiagnosticInput) -> Option<Diagnostic> {
         ),
         "Close background apps or add more RAM.",
         conf((used_pct - 90.0) / 10.0 * 100.0),
+    ))
+}
+
+fn memory_hog(input: &DiagnosticInput) -> Option<Diagnostic> {
+    const GB: u64 = 1024 * 1024 * 1024;
+    let hog = input
+        .processes
+        .iter()
+        .filter(|p| p.memory_bytes > 4 * GB)
+        .max_by_key(|p| p.memory_bytes)?;
+    Some(diag(
+        "memory_hog",
+        "warning",
+        "memory",
+        "Memory-hungry process",
+        format!(
+            "{} is using {:.1} GB.",
+            hog.name,
+            hog.memory_bytes as f64 / GB as f64
+        ),
+        "Close it if you aren't using it.",
+        conf(hog.memory_bytes as f32 / (8.0 * GB as f32) * 100.0),
     ))
 }
 
@@ -219,7 +251,7 @@ fn cpu_bottleneck(input: &DiagnosticInput) -> Option<Diagnostic> {
         "CPU bottleneck detected",
         format!("{fps:.0} FPS average with CPU at {cpu:.0}%."),
         "Close background apps or apply a high-performance power profile.",
-        conf((60.0 - fps.max(0.0)) / 60.0 * 100.0),
+        conf(((60.0 - fps.max(0.0)) / 60.0 * 100.0) as f32),
     ))
 }
 
@@ -236,7 +268,7 @@ fn gpu_bottleneck(input: &DiagnosticInput) -> Option<Diagnostic> {
         "GPU-bound",
         format!("GPU at {gpu:.0}% while CPU at {cpu:.0}% ({fps:.0} FPS)."),
         "Lower graphics settings or resolution.",
-        conf(gpu.min(100.0)),
+        conf(gpu.min(100.0) as f32),
     ))
 }
 
@@ -276,6 +308,37 @@ fn thermal(input: &DiagnosticInput) -> Option<Diagnostic> {
         format!("{label} is {temp:.0}°C."),
         "Check cooling — clean fans, improve airflow, or repaste.",
         conf((temp - 85.0) / 15.0 * 100.0),
+    ))
+}
+
+fn high_cpu(input: &DiagnosticInput) -> Option<Diagnostic> {
+    if input.cpu_usage < 90.0 {
+        return None;
+    }
+    Some(diag(
+        "high_cpu",
+        "warning",
+        "cpu",
+        "Sustained high CPU usage",
+        format!("CPU is at {:.0}%.", input.cpu_usage),
+        "Check the Processes page for the top consumer.",
+        conf((input.cpu_usage - 90.0) / 10.0 * 100.0),
+    ))
+}
+
+fn gpu_saturated(input: &DiagnosticInput) -> Option<Diagnostic> {
+    let gpu = input.gpu_usage?;
+    if gpu < 95.0 || input.cpu_usage > 30.0 {
+        return None;
+    }
+    Some(diag(
+        "gpu_saturated",
+        "info",
+        "gpu",
+        "GPU at maximum",
+        format!("GPU is at {gpu:.0}% while CPU is at {:.0}%.", input.cpu_usage),
+        "Expected while gaming — lower settings if FPS is too low.",
+        conf(gpu),
     ))
 }
 
@@ -340,8 +403,6 @@ mod tests {
             name: "OneDrive.exe".into(),
             cpu_usage: 40.0,
             memory_bytes: 0,
-            disk_read_bytes: 0,
-            disk_written_bytes: 0,
         });
         let d = diagnose(&i);
         assert!(d.iter().any(|x| x.id == "cloud_sync"));
@@ -354,8 +415,6 @@ mod tests {
             name: "msedgeupdate.exe".into(),
             cpu_usage: 55.0,
             memory_bytes: 0,
-            disk_read_bytes: 0,
-            disk_written_bytes: 0,
         });
         let d = diagnose(&i);
         assert!(d.iter().any(|x| x.id == "updater"));
@@ -409,48 +468,13 @@ mod tests {
     fn ranks_critical_above_info() {
         let mut i = input();
         i.ram_used_mb = 15800; // critical memory
-        i.processes.push(ProcessSnapshot {
-            name: "chrome.exe".into(),
-            cpu_usage: 0.0,
-            memory_bytes: 0,
-            disk_read_bytes: 0,
-            disk_written_bytes: 0,
-        });
-        i.processes.push(ProcessSnapshot {
-            name: "steam.exe".into(),
-            cpu_usage: 0.0,
-            memory_bytes: 0,
-            disk_read_bytes: 0,
-            disk_written_bytes: 0,
-        });
-        i.processes.push(ProcessSnapshot {
-            name: "discord.exe".into(),
-            cpu_usage: 0.0,
-            memory_bytes: 0,
-            disk_read_bytes: 0,
-            disk_written_bytes: 0,
-        });
-        i.processes.push(ProcessSnapshot {
-            name: "spotify.exe".into(),
-            cpu_usage: 0.0,
-            memory_bytes: 0,
-            disk_read_bytes: 0,
-            disk_written_bytes: 0,
-        });
-        i.processes.push(ProcessSnapshot {
-            name: "onedrive.exe".into(),
-            cpu_usage: 0.0,
-            memory_bytes: 0,
-            disk_read_bytes: 0,
-            disk_written_bytes: 0,
-        });
-        i.processes.push(ProcessSnapshot {
-            name: "epicgameslauncher.exe".into(),
-            cpu_usage: 0.0,
-            memory_bytes: 0,
-            disk_read_bytes: 0,
-            disk_written_bytes: 0,
-        });
+        for name in ["chrome.exe", "steam.exe", "discord.exe", "spotify.exe", "onedrive.exe", "epicgameslauncher.exe"] {
+            i.processes.push(ProcessSnapshot {
+                name: name.into(),
+                cpu_usage: 0.0,
+                memory_bytes: 0,
+            });
+        }
         let d = diagnose(&i);
         assert!(!d.is_empty());
         assert_eq!(d[0].severity, "critical");

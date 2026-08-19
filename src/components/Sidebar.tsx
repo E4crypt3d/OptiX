@@ -11,6 +11,7 @@ import {
   Rocket,
   ScanSearch,
   Settings,
+  Sparkles,
   Trash2,
   Undo2,
   Zap,
@@ -30,6 +31,7 @@ export type ViewId =
   | "games"
   | "benchmarks"
   | "crash"
+  | "diagnostics"
   | "settings";
 
 const NAV: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
@@ -46,6 +48,7 @@ const NAV: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "games", label: "Game Profiles", icon: Gamepad2 },
   { id: "benchmarks", label: "Benchmarks", icon: Gauge },
   { id: "crash", label: "Crash Reports", icon: AlertTriangle },
+  { id: "diagnostics", label: "Diagnostics", icon: Sparkles },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

@@ -1,8 +1,10 @@
-//! Diagnostics models (Phase 12): a single rule-based finding with a\n//! confidence score and an actionable recommendation.
+//! Diagnostics models (Phase 12): a single rule-based finding with a
+//! confidence score and an actionable recommendation.
 
 use serde::Serialize;
 
-/// A ranked, evidence-backed diagnostic finding. Rule-based only — nothing is\n/// changed automatically; each finding is advisory with a confidence score.
+/// A ranked, evidence-backed diagnostic finding. Rule-based only — nothing is
+/// changed automatically; each finding is advisory with a confidence score.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {

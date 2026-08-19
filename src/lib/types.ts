@@ -484,3 +484,13 @@ export interface CrashReport {
   reportZipPath: string | null;
   source: string;
 }
+
+export interface Diagnostic {
+  id: string;
+  severity: string;
+  category: string;
+  title: string;
+  detail: string;
+  recommendation: string;
+  confidence: number;
+}
