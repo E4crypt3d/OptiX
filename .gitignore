@@ -29,3 +29,5 @@ src-tauri/gen/schemas/
 
 # Local tooling
 .codegraph
+.omo/
+.freebuff/
