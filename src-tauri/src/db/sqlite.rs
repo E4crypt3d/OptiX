@@ -152,11 +152,96 @@ fn migrate(conn: &Connection) -> Result<()> {
     // database was first created.
     conn.execute_batch(SCHEMA_V1)?;
     // Columns introduced after a table's first release are not added by
-    // `CREATE TABLE IF NOT EXISTS`, so backfill them explicitly.
-    ensure_column(conn, "snapshots", "reason", "TEXT")?;
-    ensure_column(conn, "games", "app_id", "TEXT")?;
-    ensure_column(conn, "benchmarks", "game_name", "TEXT")?;
+    // `CREATE TABLE IF NOT EXISTS`, so backfill every nullable column
+    // explicitly (idempotent — no-op when already present).
+    ensure_columns(conn)?;
     conn.pragma_update(None, "user_version", 1)?;
+    Ok(())
+}
+
+/// Ensure every nullable column exists across all tables. SQLite's
+/// `CREATE TABLE IF NOT EXISTS` never alters an existing table, so any column
+/// added after a table's first release must be backfilled here. Idempotent.
+fn ensure_columns(conn: &Connection) -> Result<()> {
+    const COLUMNS: &[(&str, &str, &str)] = &[
+        // hardware_history
+        ("hardware_history", "cpu_usage", "REAL"),
+        ("hardware_history", "cpu_temp", "REAL"),
+        ("hardware_history", "ram_used_mb", "INTEGER"),
+        ("hardware_history", "ram_total_mb", "INTEGER"),
+        ("hardware_history", "gpu_usage", "REAL"),
+        ("hardware_history", "gpu_temp", "REAL"),
+        ("hardware_history", "gpu_vram_mb", "INTEGER"),
+        ("hardware_history", "gpu_power_w", "REAL"),
+        ("hardware_history", "disk_used_mb", "INTEGER"),
+        ("hardware_history", "disk_total_mb", "INTEGER"),
+        ("hardware_history", "net_down_bps", "INTEGER"),
+        ("hardware_history", "net_up_bps", "INTEGER"),
+        ("hardware_history", "fps", "REAL"),
+        ("hardware_history", "frame_time_ms", "REAL"),
+        // snapshots
+        ("snapshots", "name", "TEXT"),
+        ("snapshots", "reason", "TEXT"),
+        ("snapshots", "created_at", "INTEGER"),
+        ("snapshots", "restored_at", "INTEGER"),
+        ("snapshots", "status", "TEXT"),
+        // changes
+        ("changes", "old_value", "TEXT"),
+        ("changes", "new_value", "TEXT"),
+        ("changes", "old_json", "TEXT"),
+        ("changes", "new_json", "TEXT"),
+        ("changes", "applied_at", "INTEGER"),
+        ("changes", "verified", "INTEGER DEFAULT 0"),
+        ("changes", "rolled_back", "INTEGER DEFAULT 0"),
+        // profiles
+        ("profiles", "name", "TEXT"),
+        ("profiles", "kind", "TEXT"),
+        // games
+        ("games", "name", "TEXT"),
+        ("games", "launcher", "TEXT"),
+        ("games", "app_id", "TEXT"),
+        ("games", "install_path", "TEXT"),
+        ("games", "executable", "TEXT"),
+        ("games", "last_played", "INTEGER"),
+        ("games", "detected_at", "INTEGER"),
+        // game_profiles
+        ("game_profiles", "cpu_priority", "TEXT"),
+        ("game_profiles", "affinity_mask", "TEXT"),
+        ("game_profiles", "power_profile", "TEXT"),
+        ("game_profiles", "network_profile", "TEXT"),
+        ("game_profiles", "cleanup_bg", "INTEGER DEFAULT 0"),
+        ("game_profiles", "gpu_profile", "TEXT"),
+        ("game_profiles", "enabled", "INTEGER DEFAULT 1"),
+        // benchmarks
+        ("benchmarks", "game_id", "INTEGER"),
+        ("benchmarks", "game_name", "TEXT"),
+        ("benchmarks", "started_at", "INTEGER"),
+        ("benchmarks", "duration_ms", "INTEGER"),
+        ("benchmarks", "avg_fps", "REAL"),
+        ("benchmarks", "p1_fps", "REAL"),
+        ("benchmarks", "p01_fps", "REAL"),
+        ("benchmarks", "avg_frame_time_ms", "REAL"),
+        ("benchmarks", "p95_frame_time_ms", "REAL"),
+        ("benchmarks", "cpu_avg", "REAL"),
+        ("benchmarks", "gpu_avg", "REAL"),
+        ("benchmarks", "ram_avg_mb", "REAL"),
+        ("benchmarks", "latency_ms", "REAL"),
+        ("benchmarks", "config_hash", "TEXT"),
+        ("benchmarks", "csv_path", "TEXT"),
+        // crash_reports
+        ("crash_reports", "detected_at", "INTEGER"),
+        ("crash_reports", "app", "TEXT"),
+        ("crash_reports", "pid", "INTEGER"),
+        ("crash_reports", "event_id", "INTEGER"),
+        ("crash_reports", "module", "TEXT"),
+        ("crash_reports", "exception_code", "TEXT"),
+        ("crash_reports", "wer_report_path", "TEXT"),
+        ("crash_reports", "minidump_path", "TEXT"),
+        ("crash_reports", "report_zip_path", "TEXT"),
+    ];
+    for (table, column, decl) in COLUMNS {
+        ensure_column(conn, table, column, decl)?;
+    }
     Ok(())
 }
 
@@ -731,10 +816,12 @@ mod tests {
     #[test]
     fn migration_backfills_columns_on_existing_tables() {
         let conn = Connection::open_in_memory().unwrap();
-        // Simulate a database created before these columns were introduced.
+        // Simulate a database created before several columns were introduced.
         conn.execute_batch(
             "CREATE TABLE snapshots (id TEXT PRIMARY KEY, name TEXT, created_at INTEGER, restored_at INTEGER, status TEXT);
-             CREATE TABLE games (id INTEGER PRIMARY KEY, name TEXT, launcher TEXT, install_path TEXT, executable TEXT);
+             CREATE TABLE changes (id INTEGER PRIMARY KEY, snapshot_id TEXT NOT NULL, domain TEXT NOT NULL, location TEXT NOT NULL, kind TEXT NOT NULL, old_value TEXT, new_value TEXT, applied_at INTEGER);
+             CREATE TABLE games (id INTEGER PRIMARY KEY, name TEXT, launcher TEXT, install_path TEXT, executable TEXT, last_played INTEGER, detected_at INTEGER);
+             CREATE TABLE game_profiles (game_id INTEGER PRIMARY KEY, cpu_priority TEXT, power_profile TEXT, network_profile TEXT);
              CREATE TABLE benchmarks (id INTEGER PRIMARY KEY, game_id INTEGER, started_at INTEGER, duration_ms INTEGER);",
         )
         .unwrap();
@@ -743,5 +830,8 @@ mod tests {
         conn.execute("SELECT reason FROM snapshots", []).unwrap();
         conn.execute("SELECT app_id FROM games", []).unwrap();
         conn.execute("SELECT game_name FROM benchmarks", []).unwrap();
+        conn.execute("SELECT old_json, new_json, verified, rolled_back FROM changes", []).unwrap();
+        conn.execute("SELECT affinity_mask, cleanup_bg, gpu_profile, enabled FROM game_profiles", [])
+            .unwrap();
     }
 }
