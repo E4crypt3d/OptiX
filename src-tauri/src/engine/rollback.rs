@@ -51,6 +51,7 @@ fn rollback_change(change: &ChangeRecord) -> Result<()> {
     match change.domain.as_str() {
         "registry" => crate::win::registry::rollback_registry(change),
         "power" => crate::win::power::rollback_power(change),
+        "service" => crate::win::services::rollback_service(change),
         other => Err(OptixError::InvalidState(format!(
             "rollback not implemented for domain '{other}'"
         ))),

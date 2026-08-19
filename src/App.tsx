@@ -6,6 +6,7 @@ import { Power } from "./components/Power";
 import { Processes } from "./components/Processes";
 import { Rollback } from "./components/Rollback";
 import { Scanner } from "./components/Scanner";
+import { StartupServices } from "./components/StartupServices";
 import { Sidebar, type ViewId } from "./components/Sidebar";
 import { Snapshots } from "./components/Snapshots";
 
@@ -39,6 +40,7 @@ export default function App() {
           {view === "cleanup" && <Cleanup />}
           {view === "processes" && <Processes />}
           {view === "power" && <Power />}
+          {view === "startup" && <StartupServices />}
           {PLACEHOLDERS[view] && (
             <Placeholder
               title={PLACEHOLDERS[view].title}

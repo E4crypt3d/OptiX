@@ -1,4 +1,5 @@
-//! Registry access for snapshot capture and rollback (Windows-only).
+//! Registry access for snapshot capture and rollback (Windows-only), plus
+//! generic set/delete helpers used by the startup manager.
 
 use serde::Serialize;
 
@@ -11,7 +12,7 @@ use crate::models::snapshot::ChangeRecord;
 pub struct RegistryEntry {
     pub name: String,
     /// Full path including hive and value name, e.g.
-    /// `HKLM\SYSTEM\...\GraphicsDrivers\HwSchMode`.
+    /// `HKLM\\SYSTEM\\...\\GraphicsDrivers\\HwSchMode`.
     pub path: String,
     pub value_name: String,
     pub value: Option<String>,
@@ -71,7 +72,7 @@ pub fn capture_gaming_toggles() -> Vec<RegistryEntry> {
                 .map(|v| v.to_string());
             RegistryEntry {
                 name: (*name).to_string(),
-                path: format!("{hive}\\{subkey}\\{value_name}"),
+                path: format!("{hive}\\\\{subkey}\\\\{value_name}"),
                 value_name: (*value_name).to_string(),
                 value,
             }
@@ -84,28 +85,19 @@ pub fn capture_gaming_toggles() -> Vec<RegistryEntry> {
     Vec::new()
 }
 
-/// Restore a registry value from a change record. `location` has the form
-/// `<HIVE>\<subkey>\<value_name>`.
+/// Split a `location` of the form `<HIVE>\<subkey>\<value_name>` into its parts.
 #[cfg(windows)]
-pub fn rollback_registry(change: &ChangeRecord) -> Result<()> {
+fn parse_location(location: &str) -> Result<(winreg::RegKey, String, String)> {
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
 
-    let Some(old) = change.old_value.as_deref() else {
-        return Err(OptixError::InvalidState(
-            "no previous value recorded for registry change".into(),
-        ));
-    };
-
-    let parts: Vec<&str> = change.location.splitn(3, '\\').collect();
+    let parts: Vec<&str> = location.splitn(3, '\\').collect();
     if parts.len() != 3 {
         return Err(OptixError::InvalidState(format!(
-            "malformed registry location: {}",
-            change.location
+            "malformed registry location: {location}"
         )));
     }
     let (hive, subkey, value_name) = (parts[0], parts[1], parts[2]);
-
     let (key, _disposition) = match hive {
         "HKLM" => RegKey::predef(HKEY_LOCAL_MACHINE).create_subkey(subkey)?,
         "HKCU" => RegKey::predef(HKEY_CURRENT_USER).create_subkey(subkey)?,
@@ -115,13 +107,47 @@ pub fn rollback_registry(change: &ChangeRecord) -> Result<()> {
             )))
         }
     };
+    Ok((key, subkey.to_string(), value_name.to_string()))
+}
 
-    if let Ok(v) = old.parse::<u32>() {
-        key.set_value(value_name, &v)?;
+/// Write a value (DWORD when numeric, otherwise REG_SZ) at `location`.
+#[cfg(windows)]
+pub fn set_registry_value(location: &str, value: &str) -> Result<()> {
+    let (key, _subkey, value_name) = parse_location(location)?;
+    if let Ok(v) = value.parse::<u32>() {
+        key.set_value(&value_name, &v)?;
     } else {
-        key.set_value(value_name, &old)?;
+        key.set_value(&value_name, &value)?;
     }
     Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn set_registry_value(_location: &str, _value: &str) -> Result<()> {
+    Err(OptixError::UnsupportedPlatform("registry".into()))
+}
+
+/// Delete the value at `location` (missing value is not an error).
+#[cfg(windows)]
+pub fn delete_registry_value(location: &str) -> Result<()> {
+    let (key, _subkey, value_name) = parse_location(location)?;
+    let _ = key.delete_value(&value_name);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn delete_registry_value(_location: &str) -> Result<()> {
+    Err(OptixError::UnsupportedPlatform("registry".into()))
+}
+
+/// Restore a registry change. `Some(old)` re-writes the previous value; `None`
+/// means the value did not exist before, so it is deleted.
+#[cfg(windows)]
+pub fn rollback_registry(change: &ChangeRecord) -> Result<()> {
+    match change.old_value.as_deref() {
+        Some(old) => set_registry_value(&change.location, old),
+        None => delete_registry_value(&change.location),
+    }
 }
 
 #[cfg(not(windows))]

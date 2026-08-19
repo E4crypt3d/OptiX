@@ -271,3 +271,44 @@ export interface NicPowerResult {
   adaptersChanged: number;
   changes: number;
 }
+
+export type ServiceClass = "required" | "safe" | "unknown";
+
+export interface ServiceInfo {
+  name: string;
+  displayName: string;
+  description: string;
+  state: string;
+  startType: string;
+  binaryPath: string;
+  isDriver: boolean;
+  delayedAutoStart: boolean;
+  account: string;
+  classification: ServiceClass;
+}
+
+export interface StartupEntry {
+  id: string;
+  name: string;
+  command: string;
+  location: string;
+  source: string;
+  enabled: boolean;
+  toggleable: boolean;
+}
+
+export interface ServiceActionResult {
+  snapshotId: string;
+  changes: number;
+}
+
+export interface StartupActionResult {
+  snapshotId: string;
+  changes: number;
+}
+
+export interface WSearchStatus {
+  enabled: boolean;
+  running: boolean;
+  startType: string;
+}

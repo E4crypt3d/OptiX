@@ -45,6 +45,14 @@ pub fn run() {
             commands::power::apply_power_profile,
             commands::power::list_nic_adapters,
             commands::power::disable_nic_power_saving,
+            commands::services::list_services,
+            commands::services::stop_service,
+            commands::services::start_service,
+            commands::services::set_service_start_type,
+            commands::services::get_wsearch,
+            commands::services::set_wsearch,
+            commands::services::list_startup,
+            commands::services::set_startup_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

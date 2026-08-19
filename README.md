@@ -34,8 +34,15 @@ modification follows a fixed pipeline:
   rollback, and NIC power-saving disable (EEE, Green Ethernet, device power
   management) as reversible registry changes. Remaining: processor idle-disable
   preset, per-phase GPU preference (Phase 8).
-- ⬜ Phase 6–12 — Startup/Services, Network, GPU, Game Profiles, Benchmark,
-  Crash Recovery, Diagnostics
+- 🚧 **Phase 6 — Startup & Service Manager**: service enumeration (state, start
+  type, binary path, description, delayed-auto-start) with REQUIRED/SAFE/UNKNOWN
+  classification and a hard never-flag list; start/stop and start-type controls;
+  Windows Search (WSearch) dedicated toggle; startup app enumeration (Run keys
+  + startup folders) with Task Manager `StartupApproved` disabled-state
+  awareness and reversible enable/disable. Remaining: scheduled-task
+  enumeration, publisher/signature verification.
+- ⬜ Phase 7–12 — Network, GPU, Game Profiles, Benchmark, Crash Recovery,
+  Diagnostics
 
 ## Stack
 
@@ -55,9 +62,9 @@ src-tauri/
     error.rs             OptixError (thiserror, serialized to frontend)
     commands/            Tauri commands (system.rs, processes.rs, …)
     db/                  SQLite schema + migrations (sqlite.rs)
-    engine/              cleanup / snapshot / rollback / optimizer / power / processes
-    models/              hardware / snapshot / optimization / power / process structs
-    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, process
+    engine/              cleanup / snapshot / rollback / optimizer / power / processes / services
+    models/              hardware / snapshot / optimization / power / process / services structs
+    win/                 #[cfg(windows)]: elevation, registry, GDI, power, nic, services, startup, process
 ```
 
 ## Development

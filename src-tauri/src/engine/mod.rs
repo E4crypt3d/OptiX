@@ -3,6 +3,7 @@ pub mod optimizer;
 pub mod power;
 pub mod processes;
 pub mod rollback;
+pub mod services;
 pub mod snapshot;
 
 pub(crate) fn now_ms() -> u64 {

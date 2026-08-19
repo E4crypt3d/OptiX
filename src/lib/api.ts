@@ -13,8 +13,13 @@ import type {
   PowerScheme,
   PriorityClass,
   ProcessDetail,
+  ServiceActionResult,
+  ServiceInfo,
   Snapshot,
+  StartupActionResult,
+  StartupEntry,
   SystemStats,
+  WSearchStatus,
 } from "./types";
 
 export function scanSystem(): Promise<HardwareInfo> {
@@ -109,4 +114,43 @@ export function listNicAdapters(): Promise<NicAdapter[]> {
 
 export function disableNicPowerSaving(): Promise<NicPowerResult> {
   return invoke<NicPowerResult>("disable_nic_power_saving");
+}
+
+export function listServices(): Promise<ServiceInfo[]> {
+  return invoke<ServiceInfo[]>("list_services");
+}
+
+export function stopService(name: string): Promise<ServiceActionResult> {
+  return invoke<ServiceActionResult>("stop_service", { name });
+}
+
+export function startService(name: string): Promise<ServiceActionResult> {
+  return invoke<ServiceActionResult>("start_service", { name });
+}
+
+export function setServiceStartType(
+  name: string,
+  startType: string,
+): Promise<ServiceActionResult> {
+  return invoke<ServiceActionResult>("set_service_start_type", { name, startType });
+}
+
+export function getWsearch(): Promise<WSearchStatus> {
+  return invoke<WSearchStatus>("get_wsearch");
+}
+
+export function setWsearch(enabled: boolean): Promise<ServiceActionResult> {
+  return invoke<ServiceActionResult>("set_wsearch", { enabled });
+}
+
+export function listStartup(): Promise<StartupEntry[]> {
+  return invoke<StartupEntry[]>("list_startup");
+}
+
+export function setStartupEnabled(
+  location: string,
+  enabled: boolean,
+  command: string,
+): Promise<StartupActionResult> {
+  return invoke<StartupActionResult>("set_startup_enabled", { location, enabled, command });
 }

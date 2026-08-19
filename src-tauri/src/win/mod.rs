@@ -11,4 +11,6 @@ pub mod os;
 pub mod power;
 pub mod process;
 pub mod registry;
+pub mod services;
+pub mod startup;
 pub mod wmi;
