@@ -1,51 +1,52 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { Cleanup } from "./components/Cleanup";
+import { Dashboard } from "./components/Dashboard";
+import { Placeholder } from "./components/Placeholder";
+import { Power } from "./components/Power";
+import { Processes } from "./components/Processes";
+import { Rollback } from "./components/Rollback";
+import { Scanner } from "./components/Scanner";
+import { Sidebar, type ViewId } from "./components/Sidebar";
+import { Snapshots } from "./components/Snapshots";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+const PLACEHOLDERS: Record<string, { title: string; description: string }> = {
+  games: {
+    title: "Game Profiles",
+    description: "Detected games and their per-game optimization profiles.",
+  },
+  benchmarks: {
+    title: "Benchmarks",
+    description: "Measure FPS and latency before and after optimization.",
+  },
+  settings: {
+    title: "Settings",
+    description: "Configure Optix behavior and safety preferences.",
+  },
+};
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+export default function App() {
+  const [view, setView] = useState<ViewId>("dashboard");
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <div className="flex h-screen w-full overflow-hidden bg-[#0a0e17] text-slate-100">
+      <Sidebar active={view} onNavigate={setView} />
+      <main className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto max-w-6xl">
+          {view === "dashboard" && <Dashboard />}
+          {view === "scanner" && <Scanner />}
+          {view === "snapshots" && <Snapshots />}
+          {view === "rollback" && <Rollback />}
+          {view === "cleanup" && <Cleanup />}
+          {view === "processes" && <Processes />}
+          {view === "power" && <Power />}
+          {PLACEHOLDERS[view] && (
+            <Placeholder
+              title={PLACEHOLDERS[view].title}
+              description={PLACEHOLDERS[view].description}
+            />
+          )}
+        </div>
+      </main>
+    </div>
   );
 }
-
-export default App;

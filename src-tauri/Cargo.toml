@@ -1,8 +1,8 @@
 [package]
 name = "optix"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Windows gaming performance optimization and system recovery utility"
+authors = ["e4crypt3d"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -26,5 +26,20 @@ sysinfo = "0.39.6"
 tokio = { version = "1.53.1", features = ["full"] }
 anyhow = "1.0.104"
 thiserror = "2.0.20"
-windows = "0.62.2"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Power",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+uuid = { version = "1.24.1", features = ["v4"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56.0"
+wmi = "0.18"
+windows-version = "0.1"
 
