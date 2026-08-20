@@ -68,10 +68,14 @@ pub fn split_csv(line: &str) -> Vec<String> {
 /// Enumerate scheduled tasks on Windows (empty elsewhere).
 #[cfg(windows)]
 pub fn list_scheduled_tasks() -> Vec<ScheduledTask> {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
 
+    // Spawn without a console window — a GUI app must not flash one.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let output = match Command::new("schtasks.exe")
         .args(["/query", "/fo", "CSV", "/v"])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         Ok(o) => o,

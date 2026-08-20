@@ -39,8 +39,14 @@ pub struct RawProvisioned {
 
 #[cfg(windows)]
 fn run_powershell(script: &str) -> Result<String, String> {
+    use std::os::windows::process::CommandExt;
+
+    // Spawn without a console window — PowerShell is a console binary and
+    // would otherwise flash a window every time the Bloatware tab refreshes.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let output = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("failed to launch PowerShell: {e}"))?;
     if output.status.success() {

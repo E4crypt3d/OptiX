@@ -59,10 +59,14 @@ pub fn empty_recycle_bin() -> Result<()> {
 /// fills the stderr pipe would deadlock once the pipe buffer fills.
 #[cfg(windows)]
 pub fn run_dism_component_cleanup() -> Result<String> {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
 
+    // Spawn without a console window — a GUI app must not flash one.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut child = Command::new("dism.exe")
         .args(["/online", "/cleanup-image", "/startcomponentcleanup"])
+        .creation_flags(CREATE_NO_WINDOW)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
