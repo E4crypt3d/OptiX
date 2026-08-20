@@ -5,6 +5,22 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-08-20
+
+### Added
+
+- **Power-profile abort safety**: cloned scheme is deleted if audit recording
+  fails, preventing orphaned power plans.
+- **NIC power-saving early exit**: returns immediately with no snapshot when
+  no adapter has power-saving enabled, avoiding unnecessary operations.
+- **NIC per-write rollback**: each registry write rolls back on audit failure,
+  preventing partial state when the journal cannot record a change.
+- **Optional NIC snapshot**: `snapshotId` is now nullable; no snapshot is
+  created when there is nothing to change.
+- **Power page platform awareness**: read-only banner on non-Windows, loading
+  skeletons, scheme availability badges, and disabled states when the base
+  scheme is missing.
+
 ## [0.9.0] - 2026-08-20
 
 ### Added

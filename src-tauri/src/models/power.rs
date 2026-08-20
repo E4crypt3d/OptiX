@@ -72,7 +72,7 @@ impl NicAdapter {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NicPowerResult {
-    pub snapshot_id: String,
+    pub snapshot_id: Option<String>,
     /// Number of adapters that had at least one value changed.
     pub adapters_changed: usize,
     /// Number of registry values written.

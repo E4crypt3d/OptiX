@@ -161,8 +161,18 @@ pub fn apply_profile(db: &Database, id: &str) -> Result<PowerApplyResult> {
     }
 
     // Reverse-order rollback: restore active scheme, then delete the clone.
-    record(db, &snap.id, "power", "scheme:create", "create", None, Some(&new_guid))?;
-    record(db, &snap.id, "power", "scheme:active", "set", Some(&old_guid), Some(&new_guid))?;
+    if let Err(error) = record(db, &snap.id, "power", "scheme:create", "create", None, Some(&new_guid)) {
+        if let Err(delete_error) = win::power::delete_scheme(&new_guid) {
+            crate::logging::error("power abort: delete cloned scheme after audit failure", &delete_error);
+        }
+        return Err(abort(db, error));
+    }
+    if let Err(error) = record(db, &snap.id, "power", "scheme:active", "set", Some(&old_guid), Some(&new_guid)) {
+        if let Err(delete_error) = win::power::delete_scheme(&new_guid) {
+            crate::logging::error("power abort: delete cloned scheme after audit failure", &delete_error);
+        }
+        return Err(abort(db, error));
+    }
 
     Ok(PowerApplyResult {
         snapshot_id: snap.id,
@@ -177,51 +187,85 @@ pub fn apply_profile(db: &Database, id: &str) -> Result<PowerApplyResult> {
 /// real previous value to restore), recording each as a `registry` change.
 pub fn disable_nic_power_saving(db: &Database) -> Result<NicPowerResult> {
     let adapters = win::nic::list_adapters();
-    let snap = snapshot::create_lightweight(db, "NIC power saving", Some("disable NIC power saving"))?;
+    let planned_changes = adapters
+        .iter()
+        .map(|adapter| {
+            usize::from(adapter.eee == Some(1))
+                + usize::from(adapter.green_ethernet == Some(1))
+                + usize::from(adapter.power_management == Some(1))
+                + usize::from(matches!(
+                    adapter.pnp_capabilities,
+                    Some(value) if value != PNP_NO_POWER_OFF
+                ))
+        })
+        .sum::<usize>();
+    if planned_changes == 0 {
+        return Ok(NicPowerResult {
+            snapshot_id: None,
+            adapters_changed: 0,
+            changes: 0,
+        });
+    }
 
+    let snap = snapshot::create_lightweight(db, "NIC power saving", Some("disable NIC power saving"))?;
     let mut adapters_changed = 0usize;
     let mut changes = 0usize;
 
-    for adapter in &adapters {
-        let mut adapter_changed = false;
+    let applied: Result<()> = (|| {
+        for adapter in &adapters {
+            let mut adapter_changed = false;
 
-        if adapter.eee == Some(1) {
-            apply_nic_value(db, &snap.id, &adapter.key, "*EEE", Some("1"), "0")?;
-            adapter_changed = true;
-            changes += 1;
-        }
-        if adapter.green_ethernet == Some(1) {
-            apply_nic_value(db, &snap.id, &adapter.key, "EnableGreenEthernet", Some("1"), "0")?;
-            adapter_changed = true;
-            changes += 1;
-        }
-        if adapter.power_management == Some(1) {
-            apply_nic_value(db, &snap.id, &adapter.key, "EnablePowerManagement", Some("1"), "0")?;
-            adapter_changed = true;
-            changes += 1;
-        }
-        if let Some(current) = adapter.pnp_capabilities {
-            if current != PNP_NO_POWER_OFF {
-                apply_nic_value(
-                    db,
-                    &snap.id,
-                    &adapter.key,
-                    "PnPCapabilities",
-                    Some(&current.to_string()),
-                    &PNP_NO_POWER_OFF.to_string(),
-                )?;
+            if adapter.eee == Some(1) {
+                apply_nic_value(db, &snap.id, &adapter.key, "*EEE", Some("1"), "0")?;
                 adapter_changed = true;
                 changes += 1;
             }
-        }
+            if adapter.green_ethernet == Some(1) {
+                apply_nic_value(db, &snap.id, &adapter.key, "EnableGreenEthernet", Some("1"), "0")?;
+                adapter_changed = true;
+                changes += 1;
+            }
+            if adapter.power_management == Some(1) {
+                apply_nic_value(db, &snap.id, &adapter.key, "EnablePowerManagement", Some("1"), "0")?;
+                adapter_changed = true;
+                changes += 1;
+            }
+            if let Some(current) = adapter.pnp_capabilities {
+                if current != PNP_NO_POWER_OFF {
+                    let old = current.to_string();
+                    let new = PNP_NO_POWER_OFF.to_string();
+                    apply_nic_value(
+                        db,
+                        &snap.id,
+                        &adapter.key,
+                        "PnPCapabilities",
+                        Some(&old),
+                        &new,
+                    )?;
+                    adapter_changed = true;
+                    changes += 1;
+                }
+            }
 
-        if adapter_changed {
-            adapters_changed += 1;
+            if adapter_changed {
+                adapters_changed += 1;
+            }
         }
+        Ok(())
+    })();
+
+    if let Err(error) = applied {
+        if let Err(rollback_error) = rollback::restore(db, &snap.id) {
+            crate::logging::error("NIC power-saving abort rollback failed", &rollback_error);
+        }
+        if let Err(delete_error) = snapshot::delete(db, &snap.id) {
+            crate::logging::error("NIC power-saving abort snapshot cleanup failed", &delete_error);
+        }
+        return Err(error);
     }
 
     Ok(NicPowerResult {
-        snapshot_id: snap.id,
+        snapshot_id: Some(snap.id),
         adapters_changed,
         changes,
     })
@@ -241,7 +285,7 @@ fn apply_nic_value(
         .parse()
         .map_err(|_| OptixError::InvalidState(format!("invalid NIC value: {new_value}")))?;
     win::nic::set_dword(adapter_key, value_name, parsed)?;
-    record(
+    if let Err(error) = record(
         db,
         snapshot_id,
         "registry",
@@ -249,7 +293,15 @@ fn apply_nic_value(
         "set",
         old_value,
         Some(new_value),
-    )
+    ) {
+        if let Some(old) = old_value.and_then(|value| value.parse::<u32>().ok()) {
+            if let Err(restore_error) = win::nic::set_dword(adapter_key, value_name, old) {
+                crate::logging::error("NIC power-saving write-audit rollback failed", &restore_error);
+            }
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Record a change through the rollback engine.

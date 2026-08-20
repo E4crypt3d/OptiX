@@ -272,7 +272,7 @@ export interface NicAdapter {
 }
 
 export interface NicPowerResult {
-  snapshotId: string;
+  snapshotId: string | null;
   adaptersChanged: number;
   changes: number;
 }
