@@ -5,6 +5,28 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-19
+
+### Added
+
+- **Linux support**: builds as `.deb` and AppImage from CI; Linux install
+  instructions added to README.
+- **LTTB decimation**: Largest-Triangle-Three-Buckets algorithm for benchmark
+  frame-time charts — caps chart data at 1500 points while preserving visual
+  spikes.
+- **Visibility-aware polling**: `useInterval` hook pauses telemetry polling
+  when the window is hidden, so the dashboard idles at zero cost when
+  minimized.
+- **Lazy-loaded views**: all 16 views loaded on demand via `React.lazy()` +
+  `Suspense` — heavy dependencies (recharts, etc.) are only parsed when the
+  user opens that page.
+- **content-visibility CSS**: browser rendering optimization for off-screen
+  cards and long scrollable lists.
+
+### Fixed
+
+- Race condition in Rollback.tsx snapshot-change loading.
+
 ## [0.4.0] - 2026-08-19
 
 ### Added
