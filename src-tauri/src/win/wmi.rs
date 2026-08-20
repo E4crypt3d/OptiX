@@ -1,11 +1,23 @@
 //! Windows Management Instrumentation queries for hardware detection.
 
-use crate::models::hardware::{BiosInfo, MotherboardInfo, PhysicalDiskInfo};
+use crate::models::hardware::{BiosInfo, MotherboardInfo};
+#[cfg(windows)]
+use crate::models::hardware::PhysicalDiskInfo;
 
 /// WMI row for a video controller (GPU).
+#[cfg(windows)]
 pub struct VideoControllerInfo {
     pub name: String,
     pub adapter_ram_bytes: u64,
+}
+
+/// Motherboard / BIOS / OS edition, fetched together because they share one
+/// WMI connection (each `WMIConnection::new()` costs tens of milliseconds).
+#[derive(Debug, Default)]
+pub struct SystemHardware {
+    pub motherboard: Option<MotherboardInfo>,
+    pub bios: Option<BiosInfo>,
+    pub edition: Option<String>,
 }
 
 #[cfg(windows)]
@@ -134,61 +146,39 @@ mod imp {
             .collect()
     }
 
-    pub fn motherboard() -> Option<MotherboardInfo> {
-        let conn = WMIConnection::new().ok()?;
-        let rows = conn
+    /// Motherboard, BIOS, and OS edition from a single WMI connection.
+    pub fn system_hardware() -> SystemHardware {
+        let Ok(conn) = WMIConnection::new() else {
+            return SystemHardware::default();
+        };
+        let motherboard = conn
             .raw_query("SELECT Manufacturer, Product FROM Win32_BaseBoard")
-            .ok()?;
-        rows.into_iter().next().map(|m| MotherboardInfo {
-            manufacturer: get_string(&m, "Manufacturer").unwrap_or_default(),
-            product: get_string(&m, "Product").unwrap_or_default(),
-        })
-    }
-
-    pub fn bios() -> Option<BiosInfo> {
-        let conn = WMIConnection::new().ok()?;
-        let rows = conn
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .map(|m| MotherboardInfo {
+                manufacturer: get_string(&m, "Manufacturer").unwrap_or_default(),
+                product: get_string(&m, "Product").unwrap_or_default(),
+            });
+        let bios = conn
             .raw_query("SELECT Manufacturer, SMBIOSBIOSVersion FROM Win32_BIOS")
-            .ok()?;
-        rows.into_iter().next().map(|m| BiosInfo {
-            vendor: get_string(&m, "Manufacturer").unwrap_or_default(),
-            version: get_string(&m, "SMBIOSBIOSVersion").unwrap_or_default(),
-        })
-    }
-
-    pub fn os_edition() -> Option<String> {
-        let conn = WMIConnection::new().ok()?;
-        let rows = conn
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .map(|m| BiosInfo {
+                vendor: get_string(&m, "Manufacturer").unwrap_or_default(),
+                version: get_string(&m, "SMBIOSBIOSVersion").unwrap_or_default(),
+            });
+        let edition = conn
             .raw_query("SELECT Caption FROM Win32_OperatingSystem")
-            .ok()?;
-        rows.into_iter().next().and_then(|m| get_string(&m, "Caption"))
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .and_then(|m| get_string(&m, "Caption"));
+        SystemHardware {
+            motherboard,
+            bios,
+            edition,
+        }
     }
 }
 
 #[cfg(windows)]
-pub use imp::{bios, motherboard, os_edition, physical_disks, video_controllers};
-
-#[cfg(not(windows))]
-pub fn video_controllers() -> Vec<VideoControllerInfo> {
-    Vec::new()
-}
-
-#[cfg(not(windows))]
-pub fn physical_disks() -> Vec<PhysicalDiskInfo> {
-    Vec::new()
-}
-
-#[cfg(not(windows))]
-pub fn motherboard() -> Option<MotherboardInfo> {
-    None
-}
-
-#[cfg(not(windows))]
-pub fn bios() -> Option<BiosInfo> {
-    None
-}
-
-#[cfg(not(windows))]
-pub fn os_edition() -> Option<String> {
-    None
-}
+pub use imp::{physical_disks, system_hardware, video_controllers};

@@ -407,32 +407,17 @@ fn walk(dir: &PathBuf, visit: &mut impl FnMut(&fs::Metadata)) {
     }
 }
 
-/// Detected display adapters (VRAM from WMI where available).
+/// Detected display adapters. VRAM is filled by `win::hardware::detect_gpus`
+/// (registry on Windows, sysfs/proc on Linux) — WMI's 32-bit `AdapterRAM` is
+/// no longer consulted because it caps at 4 GiB.
 pub fn list_adapters() -> Vec<GpuAdapter> {
-    let gpus = win::hardware::detect_gpus();
-    let vram = win::wmi::video_controllers();
-    gpus
+    win::hardware::detect_gpus()
         .into_iter()
-        .map(|g| {
-            let gpu_name = g.name.to_ascii_lowercase();
-            let wmi_memory = vram
-                .iter()
-                .find(|v| {
-                    let controller_name = v.name.to_ascii_lowercase();
-                    gpu_name == controller_name
-                        || (!gpu_name.is_empty()
-                            && !controller_name.is_empty()
-                            && (gpu_name.contains(&controller_name)
-                                || controller_name.contains(&gpu_name)))
-                })
-                .map(|v| v.adapter_ram_bytes)
-                .unwrap_or(0);
-            GpuAdapter {
-                name: g.name,
-                vendor: g.vendor,
-                driver_version: g.driver_version,
-                memory_bytes: wmi_memory.max(g.memory_bytes),
-            }
+        .map(|g| GpuAdapter {
+            name: g.name,
+            vendor: g.vendor,
+            driver_version: g.driver_version,
+            memory_bytes: g.memory_bytes,
         })
         .collect()
 }

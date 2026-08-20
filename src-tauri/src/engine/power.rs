@@ -9,7 +9,9 @@
 use crate::db::sqlite::Database;
 use crate::engine::{rollback, snapshot};
 use crate::error::{OptixError, Result};
-use crate::models::power::{NicPowerResult, PowerApplyResult, PowerProfile};
+use crate::models::power::{
+    ActivePowerState, NicPowerResult, PowerApplyResult, PowerPreview, PowerProfile, PowerSettingState,
+};
 use crate::models::snapshot::ChangeRecord;
 use crate::win;
 
@@ -67,14 +69,51 @@ const PROFILES: &[ProfileDef] = &[
     },
 ];
 
-/// AC-only settings written into every Optix profile. DC (battery) values are
-/// left at their cloned defaults — Optix never forces 100% on battery.
-const AC_SETTINGS: &[(&str, &str, u32)] = &[
-    (SUB_PROCESSOR, SET_MIN_STATE, 100),
-    (SUB_PROCESSOR, SET_MAX_STATE, 100),
-    (SUB_PCIE, SET_ASPM, 0),
-    (SUB_USB, SET_SELECTIVE_SUSPEND, 0),
+/// One tracked power setting: subgroup/setting GUIDs, a display label, and the
+/// AC value Optix gaming profiles write. DC (battery) values are left at their
+/// cloned defaults — Optix never forces 100% on battery.
+struct SettingDef {
+    subgroup: &'static str,
+    setting: &'static str,
+    label: &'static str,
+    target_ac: u32,
+}
+
+/// The settings every Optix profile sets on AC, and the ones the UI tracks on
+/// the active scheme. All four have a legitimate purpose (pinning the CPU,
+/// removing link power-saving latency); none are placebo.
+const TRACKED_SETTINGS: &[SettingDef] = &[
+    SettingDef {
+        subgroup: SUB_PROCESSOR,
+        setting: SET_MIN_STATE,
+        label: "Processor minimum state",
+        target_ac: 100,
+    },
+    SettingDef {
+        subgroup: SUB_PROCESSOR,
+        setting: SET_MAX_STATE,
+        label: "Processor maximum state",
+        target_ac: 100,
+    },
+    SettingDef {
+        subgroup: SUB_PCIE,
+        setting: SET_ASPM,
+        label: "PCI Express link state",
+        target_ac: 0,
+    },
+    SettingDef {
+        subgroup: SUB_USB,
+        setting: SET_SELECTIVE_SUSPEND,
+        label: "USB selective suspend",
+        target_ac: 0,
+    },
 ];
+
+/// The display name Optix gives cloned schemes, so re-applies and rollback can
+/// recognize them.
+fn clone_name(profile_name: &str) -> String {
+    format!("Optix - {profile_name}")
+}
 
 /// The ready-to-apply Optix power profiles.
 pub fn list_profiles() -> Vec<PowerProfile> {
@@ -101,6 +140,21 @@ pub fn apply_profile(db: &Database, id: &str) -> Result<PowerApplyResult> {
 
     let old_guid = win::power::active_scheme()
         .ok_or_else(|| OptixError::Windows("cannot read the active power scheme".into()))?;
+
+    // Fast path: if the active scheme is already an Optix clone of this
+    // profile with every tracked setting at target, there is nothing to do —
+    // no clone, no writes, no snapshot.
+    if win::power::scheme_name(&old_guid).as_deref() == Some(clone_name(profile.name).as_str())
+        && plan_changes(&old_guid).is_empty()
+    {
+        return Ok(PowerApplyResult {
+            snapshot_id: String::new(),
+            scheme_guid: old_guid,
+            scheme_name: profile.name.to_string(),
+            change_count: 0,
+            already_applied: true,
+        });
+    }
 
     let snap = snapshot::create_lightweight(
         db,
@@ -131,8 +185,9 @@ pub fn apply_profile(db: &Database, id: &str) -> Result<PowerApplyResult> {
         crate::logging::warn(&format!("power profile naming failed: {e}"));
     }
 
-    for (subgroup, setting, value) in AC_SETTINGS {
-        if let Err(e) = win::power::write_ac_index(&new_guid, subgroup, setting, *value) {
+    for def in TRACKED_SETTINGS {
+        if let Err(e) = win::power::write_ac_index(&new_guid, def.subgroup, def.setting, def.target_ac)
+        {
             if let Err(del) = win::power::delete_scheme(&new_guid) {
                 crate::logging::error("power abort: delete cloned scheme", &del);
             }
@@ -179,6 +234,94 @@ pub fn apply_profile(db: &Database, id: &str) -> Result<PowerApplyResult> {
         scheme_guid: new_guid,
         scheme_name: profile.name.to_string(),
         change_count: 2,
+        already_applied: false,
+    })
+}
+
+/// Current power state: the active scheme, AC/battery, and the tracked
+/// settings' current AC values (for the "current vs recommended" UI).
+pub fn active_state() -> Option<ActivePowerState> {
+    let scheme_guid = win::power::active_scheme()?;
+    let scheme_name = win::power::scheme_name(&scheme_guid)
+        .unwrap_or_else(|| "Active power scheme".to_string());
+    let settings = current_settings(&scheme_guid);
+    Some(ActivePowerState {
+        scheme_guid,
+        scheme_name,
+        on_ac: win::power::on_ac_power(),
+        settings,
+    })
+}
+
+/// What applying a profile would change on the currently active scheme, so the
+/// UI can show exactly the deltas before the user confirms.
+pub fn preview_profile(id: &str) -> Result<PowerPreview> {
+    let profile = PROFILES
+        .iter()
+        .find(|p| p.id == id)
+        .ok_or_else(|| OptixError::InvalidState(format!("unknown power profile: {id}")))?;
+    let base_scheme_name = win::power::scheme_name(profile.base)
+        .unwrap_or_else(|| "built-in scheme".to_string());
+    let active_guid = win::power::active_scheme()
+        .ok_or_else(|| OptixError::Windows("cannot read the active power scheme".into()))?;
+    let current_scheme_name = win::power::scheme_name(&active_guid)
+        .unwrap_or_else(|| "Active power scheme".to_string());
+
+    let changes = plan_changes(&active_guid);
+    let already_applied =
+        current_scheme_name == clone_name(profile.name) && changes.is_empty();
+
+    Ok(PowerPreview {
+        profile_id: profile.id.to_string(),
+        profile_name: profile.name.to_string(),
+        base_scheme_name,
+        changes,
+        already_applied,
+        current_scheme_name,
+    })
+}
+
+/// Current AC values of every tracked setting in `scheme` that the platform
+/// can read.
+fn current_settings(scheme: &str) -> Vec<PowerSettingState> {
+    current_settings_with(TRACKED_SETTINGS, |def| {
+        win::power::read_ac_index(scheme, def.subgroup, def.setting)
+    })
+}
+
+/// Pure over the `read` accessor: build the settings state, then reduce to the
+/// ones that differ from the Optix targets. Unit-tested without Windows APIs.
+fn diff_settings(
+    tracked: &[SettingDef],
+    read: impl Fn(&SettingDef) -> Option<u32>,
+) -> Vec<PowerSettingState> {
+    current_settings_with(tracked, read)
+        .into_iter()
+        .filter(|s| s.current != s.optix_target)
+        .collect()
+}
+
+fn current_settings_with(
+    tracked: &[SettingDef],
+    read: impl Fn(&SettingDef) -> Option<u32>,
+) -> Vec<PowerSettingState> {
+    tracked
+        .iter()
+        .filter_map(|def| {
+            read(def).map(|current| PowerSettingState {
+                label: def.label.to_string(),
+                current,
+                optix_target: def.target_ac,
+            })
+        })
+        .collect()
+}
+
+/// Current AC values of the tracked settings in `scheme`, reduced to the ones
+/// that differ from the Optix targets.
+fn plan_changes(scheme: &str) -> Vec<PowerSettingState> {
+    diff_settings(TRACKED_SETTINGS, |def| {
+        win::power::read_ac_index(scheme, def.subgroup, def.setting)
     })
 }
 
@@ -363,13 +506,49 @@ mod tests {
     }
 
     #[test]
-    fn ac_settings_use_valid_guids() {
-        for (subgroup, setting, value) in AC_SETTINGS {
-            for g in [subgroup, setting] {
+    fn tracked_settings_are_well_formed() {
+        let mut labels = std::collections::HashSet::new();
+        for def in TRACKED_SETTINGS {
+            for g in [def.subgroup, def.setting] {
                 let hex: String = g.chars().filter(|c| c.is_ascii_hexdigit()).collect();
                 assert_eq!(hex.len(), 32, "bad GUID {g}");
             }
-            assert!(*value <= 100);
+            assert!(def.target_ac <= 100, "target out of range: {}", def.label);
+            assert!(labels.insert(def.label), "duplicate label: {}", def.label);
         }
+        // Every profile writes exactly the tracked settings — no hidden extras.
+        assert_eq!(TRACKED_SETTINGS.len(), 4);
+    }
+
+    #[test]
+    fn diff_settings_reports_only_differing() {
+        use std::collections::HashMap;
+        // Two settings already at target, two differing (ASPM 1 vs 0, USB 1 vs 0).
+        let mut values = HashMap::new();
+        values.insert("Processor minimum state", 100u32);
+        values.insert("Processor maximum state", 100u32);
+        values.insert("PCI Express link state", 1u32);
+        values.insert("USB selective suspend", 1u32);
+
+        let changes = diff_settings(TRACKED_SETTINGS, |def| values.get(def.label).copied());
+        assert_eq!(changes.len(), 2);
+        assert_eq!(changes[0].label, "PCI Express link state");
+        assert_eq!((changes[0].current, changes[0].optix_target), (1, 0));
+        assert_eq!(changes[1].label, "USB selective suspend");
+        assert_eq!((changes[1].current, changes[1].optix_target), (1, 0));
+    }
+
+    #[test]
+    fn diff_settings_skips_unreadable_values() {
+        // A setting the platform cannot read is omitted, not reported as a change.
+        let changes = diff_settings(TRACKED_SETTINGS, |_| None);
+        assert!(changes.is_empty());
+    }
+
+    #[test]
+    fn clone_name_is_recognizable() {
+        assert_eq!(clone_name("Balanced Gaming"), "Optix - Balanced Gaming");
+        // The already-applied check matches the clone naming exactly.
+        assert_eq!(clone_name("Competitive Gaming"), "Optix - Competitive Gaming");
     }
 }

@@ -5,6 +5,43 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-08-20
+
+### Added
+
+- **Power profile preview**: the Power page now shows exactly what applying a
+  profile would change (per-setting current → Optix target on the active
+  scheme) before you confirm, so you can review the deltas first.
+- **Current power state card**: shows the active scheme name, AC/battery
+  status, and the current vs recommended value of every tracked setting
+  (processor min/max, PCIe ASPM, USB selective suspend). A battery note warns
+  that AC-only settings are applied.
+- **Idempotent apply fast path**: applying a profile whose active scheme
+  already matches it (name + all tracked settings at target) is a no-op — no
+  clone, writes, or snapshot.
+- **Accurate GPU VRAM**: NVIDIA `HardwareInformation.qwMemorySize` (bytes) /
+  AMD `MemorySize` (MB) from the display driver registry, replacing WMI's
+  32-bit `AdapterRAM` which capped at 4 GiB; Linux VRAM from sysfs
+  `mem_info_vram_total` and NVIDIA `/proc` information.
+- **Linux hardware detection**: physical disks from sysfs (`/sys/block`);
+  motherboard/BIOS from DMI (`/sys/class/dmi/id`); startup apps from
+  freedesktop autostart entries; display refresh rate from the preferred mode
+  line.
+- **Scanner loading skeleton** and new CPU Usage / Memory Usage / Network
+  cards; Motherboard & BIOS card now always shown (dashes when unreadable).
+
+### Changed
+
+- **Motherboard/BIOS/edition read in one WMI connection** (`SystemHardware`)
+  instead of three separate connections, reducing scan latency; edition is
+  captured during the scan rather than a separate enrich pass.
+- **Scanner populates physical disks** (previously always empty) on both
+  platforms.
+- **`PowerDeleteScheme` treats an already-missing scheme as success** so
+  rollback re-runs after a re-apply don't fail.
+- **Renamed power settings to tracked settings** with labels, enforced to be
+  exactly the four that profiles write (validated by a unit test).
+
 ## [0.15.0] - 2026-08-20
 
 ### Added

@@ -27,7 +27,7 @@ pub struct PowerProfile {
 }
 
 /// Result of applying a power profile. `snapshot_id` links the reversible
-/// changes to the rollback center.
+/// changes to the rollback center (empty when nothing was applied).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PowerApplyResult {
@@ -35,6 +35,49 @@ pub struct PowerApplyResult {
     pub scheme_guid: String,
     pub scheme_name: String,
     pub change_count: usize,
+    /// True when the active scheme already matched the profile (no-op).
+    pub already_applied: bool,
+}
+
+/// One tracked power setting: its current AC value in the active scheme and
+/// the value Optix gaming profiles set.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PowerSettingState {
+    /// Human-readable name (e.g. "Processor minimum state").
+    pub label: String,
+    /// Raw value currently in the active scheme (AC).
+    pub current: u32,
+    /// Raw value Optix profiles set.
+    pub optix_target: u32,
+}
+
+/// Current power state: the active scheme, the power source, and the settings
+/// Optix tracks. `None` settings fields stay raw; the UI formats them.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivePowerState {
+    pub scheme_guid: String,
+    pub scheme_name: String,
+    /// Some(true) on AC, Some(false) on battery, None when not reported.
+    pub on_ac: Option<bool>,
+    pub settings: Vec<PowerSettingState>,
+}
+
+/// What applying a profile would change on the currently active scheme.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PowerPreview {
+    pub profile_id: String,
+    pub profile_name: String,
+    /// Name of the built-in scheme this profile clones.
+    pub base_scheme_name: String,
+    /// Settings whose AC value differs from the profile target.
+    pub changes: Vec<PowerSettingState>,
+    /// True when the active scheme already matches the profile.
+    pub already_applied: bool,
+    /// The active scheme's name at preview time.
+    pub current_scheme_name: String,
 }
 
 /// A physical network adapter and its power-saving registry values. `None`

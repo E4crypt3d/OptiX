@@ -68,6 +68,8 @@ pub fn run() {
             commands::power::list_power_schemes,
             commands::power::list_power_profiles,
             commands::power::apply_power_profile,
+            commands::power::active_power_state,
+            commands::power::preview_power_profile,
             commands::power::list_nic_adapters,
             commands::power::disable_nic_power_saving,
             commands::services::list_services,

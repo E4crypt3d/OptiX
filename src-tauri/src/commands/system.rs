@@ -147,6 +147,14 @@ pub(crate) fn scan_system_blocking() -> Result<HardwareInfo> {
         })
         .collect();
 
+    // Motherboard/BIOS/edition share one Windows WMI connection (Linux reads
+    // DMI); GPU/display/startup detection is also cross-platform now.
+    let system_hw = win::hardware::system_hardware();
+    let physical_disks = win::hardware::physical_disks();
+    let gpus = win::hardware::detect_gpus();
+    let displays: Vec<DisplayInfo> = win::hardware::displays();
+    let startup_apps = win::hardware::detect_startup_apps();
+
     let os = OsInfo {
         name: System::name().unwrap_or_default(),
         version: System::long_os_version()
@@ -157,25 +165,21 @@ pub(crate) fn scan_system_blocking() -> Result<HardwareInfo> {
         uptime_seconds: System::uptime(),
         build_number: None,
         is_windows_11: false,
-        edition: None,
+        edition: system_hw.edition,
     };
-
-    let gpus = win::hardware::detect_gpus();
-    let displays: Vec<DisplayInfo> = win::hardware::displays();
-    let startup_apps = win::hardware::detect_startup_apps();
 
     let info = HardwareInfo {
         cpu,
         gpus,
         memory,
         disks: disks_info,
-        physical_disks: Vec::new(),
+        physical_disks,
         network: network_info,
         displays,
         temperatures,
         os,
-        motherboard: None,
-        bios: None,
+        motherboard: system_hw.motherboard,
+        bios: system_hw.bios,
         processes,
         startup_apps,
         scanned_at_ms: now_ms(),

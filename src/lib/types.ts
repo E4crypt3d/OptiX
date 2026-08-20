@@ -260,6 +260,33 @@ export interface PowerApplyResult {
   schemeGuid: string;
   schemeName: string;
   changeCount: number;
+  /** True when the active scheme already matched the profile (no-op). */
+  alreadyApplied: boolean;
+}
+
+export interface PowerSettingState {
+  label: string;
+  /** Raw value currently in the active scheme (AC). */
+  current: number;
+  /** Raw value Optix profiles set. */
+  optixTarget: number;
+}
+
+export interface ActivePowerState {
+  schemeGuid: string;
+  schemeName: string;
+  /** null when the system does not report a power source. */
+  onAc: boolean | null;
+  settings: PowerSettingState[];
+}
+
+export interface PowerPreview {
+  profileId: string;
+  profileName: string;
+  baseSchemeName: string;
+  changes: PowerSettingState[];
+  alreadyApplied: boolean;
+  currentSchemeName: string;
 }
 
 export interface NicAdapter {

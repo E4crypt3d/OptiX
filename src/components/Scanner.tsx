@@ -7,6 +7,7 @@ import {
   HardDrive,
   MemoryStick,
   Monitor,
+  Network,
   RefreshCw,
   Thermometer,
 } from "lucide-react";
@@ -99,6 +100,21 @@ export function Scanner() {
         </div>
       )}
 
+      {loading && !info && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="animate-pulse rounded-lg border border-slate-800 bg-slate-900/50 p-4"
+            >
+              <div className="h-4 w-24 rounded bg-slate-800" />
+              <div className="mt-3 h-4 w-3/4 rounded bg-slate-800/70" />
+              <div className="mt-2 h-4 w-1/2 rounded bg-slate-800/50" />
+            </div>
+          ))}
+        </div>
+      )}
+
       {showWin10Banner && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -124,6 +140,7 @@ export function Scanner() {
                     <KV k="Cores" v={`${info.cpu.physicalCores} physical / ${info.cpu.logicalCores} logical`} />
                     <KV k="Clock" v={formatFrequency(info.cpu.frequencyMhz)} />
                     <KV k="Vendor" v={info.cpu.vendor} />
+                    <KV k="Usage" v={`${info.cpu.usagePercent.toFixed(1)}%`} />
                   </div>
                 </div>
               </div>
@@ -163,6 +180,7 @@ export function Scanner() {
                   <div className="mt-1 space-y-1 text-slate-500">
                     <KV k="Used" v={formatBytes(info.memory.usedBytes)} />
                     <KV k="Available" v={formatBytes(info.memory.availableBytes)} />
+                    <KV k="Usage" v={`${info.memory.usagePercent.toFixed(0)}%`} />
                   </div>
                 </div>
               </div>
@@ -213,6 +231,27 @@ export function Scanner() {
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">Display info unavailable</p>
+              )}
+            </Card>
+
+            <Card title="Network">
+              {info.network.length > 0 ? (
+                <div className="space-y-3">
+                  {info.network.map((n) => (
+                    <div key={n.name} className="flex items-start gap-3">
+                      <Network className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+                      <div className="min-w-0 flex-1 text-sm">
+                        <div className="truncate font-medium text-slate-200">{n.name}</div>
+                        <div className="mt-1 space-y-1 text-slate-500">
+                          <KV k="Received" v={formatBytes(n.totalReceivedBytes)} />
+                          <KV k="Sent" v={formatBytes(n.totalTransmittedBytes)} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No network interfaces detected</p>
               )}
             </Card>
 
@@ -270,24 +309,32 @@ export function Scanner() {
             </Card>
           )}
 
-          {(info.motherboard || info.bios) && (
-            <Card title="Motherboard & BIOS">
+          <Card title="Motherboard & BIOS">
+            {info.motherboard || info.bios ? (
               <div className="flex items-start gap-3">
                 <CircuitBoard className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
                 <div className="flex-1 space-y-1 text-sm">
-                  {info.motherboard && (
+                  {info.motherboard ? (
                     <KV
                       k="Board"
                       v={`${info.motherboard.manufacturer} ${info.motherboard.product}`.trim()}
                     />
+                  ) : (
+                    <KV k="Board" v="—" />
                   )}
-                  {info.bios && (
+                  {info.bios ? (
                     <KV k="BIOS" v={`${info.bios.vendor} ${info.bios.version}`.trim()} />
+                  ) : (
+                    <KV k="BIOS" v="—" />
                   )}
                 </div>
               </div>
-            </Card>
-          )}
+            ) : (
+              <p className="text-sm text-slate-500">
+                Unavailable — board/DMI information could not be read on this system.
+              </p>
+            )}
+          </Card>
 
           <Card title="Operating System">
             <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -349,7 +396,7 @@ export function Scanner() {
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-slate-500">No registry startup entries detected.</p>
+              <p className="text-sm text-slate-500">No startup entries found.</p>
             )}
           </Card>
         </>

@@ -18,7 +18,9 @@ import type {
   HardwareSample,
   NicAdapter,
   NicPowerResult,
+  ActivePowerState,
   PowerApplyResult,
+  PowerPreview,
   PowerProfile,
   PowerScheme,
   PriorityClass,
@@ -137,6 +139,14 @@ export function listPowerProfiles(): Promise<PowerProfile[]> {
 
 export function applyPowerProfile(id: string): Promise<PowerApplyResult> {
   return invoke<PowerApplyResult>("apply_power_profile", { id });
+}
+
+export function activePowerState(): Promise<ActivePowerState | null> {
+  return invoke<ActivePowerState | null>("active_power_state");
+}
+
+export function previewPowerProfile(id: string): Promise<PowerPreview> {
+  return invoke<PowerPreview>("preview_power_profile", { id });
 }
 
 export function listNicAdapters(): Promise<NicAdapter[]> {

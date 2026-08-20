@@ -62,6 +62,41 @@ fn known_scheme_name(guid: &str) -> Option<&'static str> {
     }
 }
 
+/// Resolve a scheme GUID's display name: localized friendly name, then the
+/// well-known English name, then `None`.
+#[cfg(windows)]
+pub fn scheme_name(guid: &str) -> Option<String> {
+    let parsed = parse_guid(guid)?;
+    read_friendly_name(&parsed).or_else(|| known_scheme_name(guid).map(str::to_string))
+}
+
+#[cfg(not(windows))]
+pub fn scheme_name(_guid: &str) -> Option<String> {
+    None
+}
+
+/// Whether the system is running on AC power (`GetSystemPowerStatus`).
+/// `None` when the status is not reported (ACLineStatus 255).
+#[cfg(windows)]
+pub fn on_ac_power() -> Option<bool> {
+    use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    let mut status: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+    let ok = unsafe { GetSystemPowerStatus(&mut status) };
+    if ok == 0 {
+        return None;
+    }
+    match status.ACLineStatus {
+        0 => Some(false), // offline (battery)
+        1 => Some(true),  // online (AC)
+        _ => None,        // 255 = unknown
+    }
+}
+
+#[cfg(not(windows))]
+pub fn on_ac_power() -> Option<bool> {
+    None
+}
+
 /// Read a scheme's localized friendly name (UTF-16LE) via `PowerReadFriendlyName`.
 #[cfg(windows)]
 fn read_friendly_name(guid: &GUID) -> Option<String> {
@@ -146,9 +181,7 @@ pub fn list_schemes() -> Vec<PowerScheme> {
         }
         let guid = unsafe { std::ptr::read_unaligned(buffer.as_ptr() as *const GUID) };
         let guid_str = guid_to_string(&guid);
-        let name = read_friendly_name(&guid)
-            .or_else(|| known_scheme_name(&guid_str).map(str::to_string))
-            .unwrap_or_else(|| "Custom power scheme".to_string());
+        let name = scheme_name(&guid_str).unwrap_or_else(|| "Custom power scheme".to_string());
         out.push(PowerScheme {
             guid: guid_str.clone(),
             name,
@@ -289,12 +322,18 @@ pub fn read_ac_index(_scheme: &str, _subgroup: &str, _setting: &str) -> Option<u
     None
 }
 
-/// Delete a power scheme.
+/// Delete a power scheme. A scheme that is already gone is treated as success:
+/// rollback re-runs (e.g. restoring an older snapshot after a re-apply) must
+/// not fail because a previous rollback already removed the clone.
 #[cfg(windows)]
 pub fn delete_scheme(guid: &str) -> Result<()> {
+    use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, ERROR_NOT_FOUND};
     let g = parse_guid(guid)
         .ok_or_else(|| OptixError::InvalidState(format!("invalid scheme GUID: {guid}")))?;
     let result = unsafe { powrprof::PowerDeleteScheme(root_key(), &g) };
+    if result == ERROR_NOT_FOUND || result == ERROR_FILE_NOT_FOUND {
+        return Ok(());
+    }
     if result != ERROR_SUCCESS {
         return Err(OptixError::Windows(format!(
             "PowerDeleteScheme failed for {guid} (error {result})"
