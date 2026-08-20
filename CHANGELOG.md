@@ -5,6 +5,19 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-08-20
+
+### Added
+
+- **Accurate network throughput**: per-window receive/transmit rates
+  (bytes/sec) computed in the backend from the shared refresh delta, shown on
+  the Dashboard.
+- **Persistent Dashboard state**: chart history and hardware scan survive tab
+  switches (module-level cache with 60s TTL), and the chart backfills from
+  persisted samples on first visit.
+- **Scan error banner** with retry, and live uptime that counts up between
+  scans.
+
 ## [0.6.0] - 2026-08-20
 
 ### Added
