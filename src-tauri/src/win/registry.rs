@@ -88,7 +88,7 @@ pub fn capture_gaming_toggles() -> Vec<RegistryEntry> {
 
 /// Split a `location` of the form `<HIVE>\<subkey>\<value_name>` into its parts.
 #[cfg(windows)]
-fn parse_location(location: &str) -> Result<(winreg::HKEY, String, String)> {
+pub(crate) fn parse_location(location: &str) -> Result<(winreg::HKEY, String, String)> {
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 
     let parts: Vec<&str> = location.splitn(3, '\\').collect();

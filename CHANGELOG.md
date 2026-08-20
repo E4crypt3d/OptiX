@@ -5,6 +5,29 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-08-20
+
+### Added
+
+- **Reversible AMD shader cache**: `set_amd_shader_cache` is now snapshot-first,
+  writes the `UMD\ShaderCache` value, and verifies the write landed. On
+  failure the previous bytes are restored and an error is returned.
+- **GPU rollback domain**: raw REG_BINARY changes (which the generic registry
+  rollback cannot restore) are recorded under the `gpu` domain and reverted by
+  `win::gpu::rollback_gpu`.
+- **AMD shader cache confirmation**: the GPU page asks for confirmation before
+  changing the cache mode, noting that a snapshot is created first and the
+  change is reversible.
+
+### Changed
+
+- **Async adapter enumeration**: `list_gpu_adapters` now runs WMI-backed
+  detection off the main thread via `spawn_blocking`, keeping the UI
+  responsive.
+- **Platform-aware GPU page**: gaming toggles, shader-cache clearing, and the
+  selected-bytes counter are hidden on non-Windows platforms with a read-only
+  explanation; driver version is only shown when present.
+
 ## [0.11.0] - 2026-08-20
 
 ### Added

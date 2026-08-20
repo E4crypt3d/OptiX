@@ -26,6 +26,8 @@ function riskTone(risk: string): "emerald" | "amber" | "rose" {
 }
 
 export function Gpu() {
+  const isWindows =
+    typeof navigator !== "undefined" && /windows|win32/i.test(navigator.userAgent);
   const [adapters, setAdapters] = useState<GpuAdapter[]>([]);
   const [toggles, setToggles] = useState<GamingToggle[]>([]);
   const [caches, setCaches] = useState<ShaderCache[]>([]);
@@ -111,6 +113,14 @@ export function Gpu() {
   }
 
   async function onAmdMode(alwaysOn: boolean) {
+    const label = alwaysOn ? "Always On" : "Optimized";
+    if (
+      !window.confirm(
+        `Set AMD shader cache to ${label}? A snapshot is created first and the change is reversible.`,
+      )
+    ) {
+      return;
+    }
     setBusy("amd");
     setError(null);
     setNotice(null);
@@ -172,7 +182,8 @@ export function Gpu() {
                 <div className="min-w-0 flex-1">
                   <div className="font-medium text-slate-200">{a.name}</div>
                   <div className="text-xs text-slate-500">
-                    {a.vendor} · driver {a.driverVersion}
+                    {a.vendor}
+                    {a.driverVersion ? ` · driver ${a.driverVersion}` : ""}
                   </div>
                 </div>
                 <div className="text-right">
@@ -186,6 +197,12 @@ export function Gpu() {
       </Card>
 
       <Card title="Gaming Toggles">
+        {!isWindows ? (
+          <p className="text-sm text-slate-500">
+            Gaming toggles are Windows registry settings; they're unavailable on
+            this platform.
+          </p>
+        ) : (
         <ul className="divide-y divide-slate-800/60">
           {toggles.map((t) => (
             <li key={t.id} className="flex items-center gap-4 py-3">
@@ -215,6 +232,7 @@ export function Gpu() {
             </li>
           ))}
         </ul>
+        )}
       </Card>
 
       {amd && amd.adapter && (
@@ -247,19 +265,26 @@ export function Gpu() {
       )}
 
       <Card
-        title={`Shader Caches (${formatBytes(totalSelected)} selected)`}
+        title={`Shader Caches${isWindows ? ` (${formatBytes(totalSelected)} selected)` : ""}`}
         action={
-          <button
-            onClick={onClearCaches}
-            disabled={busy === "caches" || selected.size === 0}
-            className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {busy === "caches" ? "Clearing…" : "Clear selected"}
-          </button>
+          isWindows && (
+            <button
+              onClick={onClearCaches}
+              disabled={busy === "caches" || selected.size === 0}
+              className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {busy === "caches" ? "Clearing…" : "Clear selected"}
+            </button>
+          )
         }
       >
-        {caches.length === 0 ? (
+        {!isWindows ? (
+          <p className="text-sm text-slate-500">
+            Shader cache directories are Windows-specific; nothing is listed on
+            this platform.
+          </p>
+        ) : caches.length === 0 ? (
           <p className="text-sm text-slate-500">No shader cache directories found.</p>
         ) : (
           <ul className="divide-y divide-slate-800/60">

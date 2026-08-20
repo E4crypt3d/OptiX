@@ -8,10 +8,12 @@ use crate::models::gpu::{
 };
 use crate::models::snapshot::ChangeRecord;
 
-/// Detected display adapters.
+/// Detected display adapters (WMI-backed; runs off the main thread).
 #[tauri::command]
-pub fn list_gpu_adapters() -> Vec<GpuAdapter> {
-    gpu::list_adapters()
+pub async fn list_gpu_adapters() -> Result<Vec<GpuAdapter>> {
+    tauri::async_runtime::spawn_blocking(gpu::list_adapters)
+        .await
+        .map_err(|e| OptixError::Other(e.to_string()))
 }
 
 /// Current gaming toggles (HAGS, GameDVR, VBS, Game Mode, MPO).
@@ -86,8 +88,12 @@ pub fn get_amd_shader_cache() -> AmdShaderCache {
     gpu::amd_shader_cache()
 }
 
-/// Set the AMD shader cache mode (always_on = true, else optimized).
+/// Set the AMD shader cache mode (always_on = true, else optimized),
+/// snapshot-first and reversible.
 #[tauri::command]
-pub fn set_amd_shader_cache(always_on: bool) -> Result<AmdShaderCache> {
-    gpu::set_amd_shader_cache(always_on)
+pub fn set_amd_shader_cache(
+    db: State<'_, Database>,
+    always_on: bool,
+) -> Result<AmdShaderCache> {
+    gpu::set_amd_shader_cache(db.inner(), always_on)
 }

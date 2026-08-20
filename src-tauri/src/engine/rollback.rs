@@ -52,6 +52,7 @@ fn rollback_change(change: &ChangeRecord) -> Result<()> {
         "registry" => crate::win::registry::rollback_registry(change),
         "power" => crate::win::power::rollback_power(change),
         "service" => crate::win::services::rollback_service(change),
+        "gpu" => crate::win::gpu::rollback_gpu(change),
         "appx" => crate::win::appx::rollback_appx(change),
         // File deletions (cleanup / shader caches) are recorded for audit but
         // not reversible — restoring a snapshot skips them instead of failing.

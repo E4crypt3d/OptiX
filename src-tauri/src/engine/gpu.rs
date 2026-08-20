@@ -442,10 +442,66 @@ pub fn amd_shader_cache() -> AmdShaderCache {
     win::gpu::amd_shader_cache_status()
 }
 
-/// Set the AMD shader cache mode (`always_on` or `optimized`).
-pub fn set_amd_shader_cache(always_on: bool) -> Result<AmdShaderCache> {
+/// Set the AMD shader cache mode (`always_on` or `optimized`), snapshot-first
+/// and reversible. The value is REG_BINARY, which the generic registry
+/// rollback cannot restore, so the change is recorded under the `gpu` domain
+/// and reverted by `win::gpu::rollback_gpu`.
+pub fn set_amd_shader_cache(db: &Database, always_on: bool) -> Result<AmdShaderCache> {
+    let location = win::gpu::amd_shader_cache_location().ok_or_else(|| {
+        OptixError::Windows("no AMD adapter with a UMD key found".into())
+    })?;
+    let expected_mode = if always_on { "always_on" } else { "optimized" };
+    if win::gpu::amd_shader_cache_status().mode == expected_mode {
+        return Ok(win::gpu::amd_shader_cache_status());
+    }
+
+    let old = win::gpu::amd_shader_cache_bytes();
+    let expected: Vec<u8> = if always_on { vec![0x32, 0x00] } else { vec![0x31, 0x00] };
+
+    let snap = snapshot::create_lightweight(
+        db,
+        "AMD shader cache",
+        Some(&format!("set AMD shader cache to {expected_mode}")),
+    )?;
+
     win::gpu::set_amd_shader_cache(always_on)?;
+
+    // Verify the write landed; on failure restore the previous bytes.
+    if win::gpu::amd_shader_cache_bytes().as_deref() != Some(expected.as_slice()) {
+        if let Some(prev) = old {
+            if let Err(e) = win::gpu::write_shader_cache_bytes(&location, &prev) {
+                crate::logging::error("AMD shader cache revert (restore value)", &e);
+            }
+        }
+        return Err(OptixError::Windows(
+            "AMD shader cache write verification failed; reverted".into(),
+        ));
+    }
+
+    rollback::record_change(
+        db,
+        &snap.id,
+        ChangeRecord {
+            id: None,
+            snapshot_id: String::new(),
+            domain: "gpu".to_string(),
+            location,
+            kind: "set_amd_shader_cache".to_string(),
+            old_value: old.map(|b| to_hex(&b)),
+            new_value: Some(to_hex(&expected)),
+            old_json: None,
+            new_json: None,
+            applied_at_ms: None,
+            verified: true,
+            rolled_back: false,
+        },
+    )?;
+
     Ok(win::gpu::amd_shader_cache_status())
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]
