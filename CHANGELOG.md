@@ -5,6 +5,48 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-08-20
+
+### Added
+
+- **Linux GPU detection**: `lspci`-based adapter enumeration with automatic
+  vendor inference (NVIDIA / AMD / Intel), sysfs fallback for systems without
+  pciutils.
+- **Linux display detection**: `/sys/class/drm` connector enumeration with
+  internal-panel (eDP/LVDS) prioritization for primary-display heuristics.
+- **Linux cleanup paths**: browser-cache profiles (Chrome, Edge, Chromium,
+  Firefox), shader-cache directories (Mesa, NVIDIA, AMD), and user-owned
+  temp-directory cleanup — `/tmp` is never touched.
+- **Cleanup input validation**: `validate_ids()` rejects unknown or empty
+  category IDs at the backend boundary before snapshot or filesystem
+  operations.
+- **Cleanup selection helpers**: "Select safe", "Select all", "Clear" buttons
+  with live total-bytes indicator.
+- **Bloatware selection helpers**: "Select candidates", "Select all removable",
+  "Select visible", "Clear" with per-package count.
+- **Platform-aware pages**: Cleanup and Bloatware pages detect non-Windows
+  platforms and show read-only banners; DISM section is hidden on Linux.
+- **Improved confirmation dialogs**: caution-package and provisioned-package
+  warnings in Bloatware; rebuild-warning for GPU shader caches in Cleanup.
+- **Improved result banners**: structured success sections with per-category
+  breakdown, snapshot badge, and individual failure details.
+- **Loading skeletons**: animated pulse placeholders on Cleanup and Bloatware
+  while the initial scan runs.
+
+### Fixed
+
+- **PowerShell injection**: single-quote escaping in `remove_installed` and
+  `remove_provisioned` prevents package names with embedded quotes from
+  breaking the command.
+- **Cleanup size overflow**: saturating arithmetic on file-size sums prevents
+  panics on extremely large directories.
+- **File ownership check**: cleanup skips files not owned by the current user
+  on Linux, preventing deletion of other users' temp files.
+- **Empty-category filtering**: cleanup scan now drops categories with zero
+  files/bytes from the results list.
+- **Temperature label truncation**: Scanner temperature labels now truncate
+  gracefully with a tooltip for long sensor names.
+
 ## [0.8.0] - 2026-08-20
 
 ### Added

@@ -222,10 +222,15 @@ export function Scanner() {
                   {info.temperatures.map((t, i) => (
                     <div key={i} className="flex items-start gap-3">
                       <Thermometer className="mt-0.5 h-5 w-5 shrink-0 text-rose-400" />
-                      <div className="flex-1 text-sm">
-                        <div className="flex items-center justify-between">
-                          <span className="truncate text-slate-200">{t.label}</span>
-                          <span className="tabular-nums text-slate-400">
+                      <div className="min-w-0 flex-1 text-sm">
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <span
+                            className="min-w-0 flex-1 truncate text-slate-200"
+                            title={t.label}
+                          >
+                            {t.label}
+                          </span>
+                          <span className="shrink-0 tabular-nums text-slate-400">
                             {t.celsius != null ? `${t.celsius.toFixed(0)}°C` : "—"}
                           </span>
                         </div>

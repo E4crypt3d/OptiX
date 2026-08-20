@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::error::Result;
+use crate::error::{OptixError, Result};
 use crate::models::cleanup::CleanupCategory;
 
 /// Per-category deletion outcome (internal).
@@ -153,7 +153,9 @@ pub fn scan() -> Vec<CleanupCategory> {
             }
             let entries = collect(def);
             let selected = apply_policy(&entries, def.policy);
-            let size = selected.iter().map(|e| e.size).sum();
+            let size = selected
+                .iter()
+                .fold(0u64, |total, entry| total.saturating_add(entry.size));
             CleanupCategory {
                 id: def.id.to_string(),
                 name: def.name.to_string(),
@@ -164,7 +166,27 @@ pub fn scan() -> Vec<CleanupCategory> {
                 expected_rebuild: def.expected_rebuild,
             }
         })
+        .filter(|category| category.file_count > 0 || category.size_bytes > 0)
         .collect()
+}
+
+/// Validate category IDs at the backend boundary before creating a snapshot or
+/// touching the filesystem. The frontend is not a security boundary.
+pub fn validate_ids(ids: &[String]) -> Result<()> {
+    if ids.is_empty() {
+        return Err(OptixError::InvalidState(
+            "select at least one cleanup category".to_string(),
+        ));
+    }
+    if let Some(id) = ids
+        .iter()
+        .find(|id| !CATEGORIES.iter().any(|category| category.id == id.as_str()))
+    {
+        return Err(OptixError::InvalidState(format!(
+            "unknown cleanup category: {id}"
+        )));
+    }
+    Ok(())
 }
 
 /// Delete the selected categories' files. Never removes directory roots, only
@@ -199,7 +221,9 @@ pub fn delete_categories(ids: &[String]) -> Result<Vec<CategoryOutcome>> {
         }
         let entries = collect(def);
         let selected = apply_policy(&entries, def.policy);
-        let before_bytes = selected.iter().map(|e| e.size).sum::<u64>();
+        let before_bytes = selected
+            .iter()
+            .fold(0u64, |total, entry| total.saturating_add(entry.size));
 
         let mut freed = 0u64;
         let mut removed = 0u64;
@@ -207,10 +231,10 @@ pub fn delete_categories(ids: &[String]) -> Result<Vec<CategoryOutcome>> {
         for e in &selected {
             match fs::remove_file(&e.path) {
                 Ok(()) => {
-                    freed += e.size;
-                    removed += 1;
+                    freed = freed.saturating_add(e.size);
+                    removed = removed.saturating_add(1);
                 }
-                Err(_) => skipped += 1,
+                Err(_) => skipped = skipped.saturating_add(1),
             }
         }
 
@@ -245,7 +269,7 @@ fn collect_dir(dir: &Path, out: &mut Vec<FileEntry>) {
             continue;
         };
         let path = entry.path();
-        if ft.is_symlink() {
+        if ft.is_symlink() || !owned_by_current_user(&entry) {
             continue;
         }
         if ft.is_dir() {
@@ -262,6 +286,35 @@ fn collect_dir(dir: &Path, out: &mut Vec<FileEntry>) {
             }
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn owned_by_current_user(entry: &fs::DirEntry) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    let Some(uid) = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status
+                .lines()
+                .find(|line| line.starts_with("Uid:"))
+                .and_then(|line| line.split_whitespace().nth(1))
+                .and_then(|value| value.parse::<u32>().ok())
+        })
+    else {
+        return false;
+    };
+    entry.metadata().map(|metadata| metadata.uid() == uid).unwrap_or(false)
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn owned_by_current_user(_entry: &fs::DirEntry) -> bool {
+    true
+}
+
+#[cfg(not(unix))]
+fn owned_by_current_user(_entry: &fs::DirEntry) -> bool {
+    true
 }
 
 fn apply_policy(entries: &[FileEntry], policy: Policy) -> Vec<&FileEntry> {
@@ -287,7 +340,7 @@ fn apply_policy(entries: &[FileEntry], policy: Policy) -> Vec<&FileEntry> {
 
 fn category_paths(id: &str) -> Vec<PathBuf> {
     match id {
-        "user_temp" => vec![std::env::temp_dir()],
+        "user_temp" => user_temp_paths(),
         "windows_temp" => windows_base()
             .map(|w| w.join("Temp"))
             .filter(|p| p.is_dir())
@@ -343,6 +396,28 @@ fn profile_subdirs(base: &Path, subs: &[&str]) -> Vec<PathBuf> {
     out
 }
 
+fn user_temp_paths() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        vec![std::env::temp_dir()]
+    }
+    #[cfg(not(windows))]
+    {
+        // `/tmp` is shared by every process and may contain files belonging to
+        // other users or currently running applications. Only clean an
+        // explicitly configured, user-owned temp directory on Linux/Unix.
+        let Some(temp) = std::env::var_os("TMPDIR").map(PathBuf::from) else {
+            return Vec::new();
+        };
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        if temp.is_dir() && home.as_ref().is_some_and(|home| temp.starts_with(home)) {
+            vec![temp]
+        } else {
+            Vec::new()
+        }
+    }
+}
+
 fn browser_cache_paths() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
@@ -366,12 +441,33 @@ fn browser_cache_paths() -> Vec<PathBuf> {
     }
     #[cfg(not(windows))]
     {
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            return Vec::new();
+        };
+        let cache = home.join(".cache");
         let mut out = Vec::new();
-        if let Some(home) = std::env::var_os("HOME") {
-            for d in ["google-chrome", "chromium", "mozilla"] {
-                let p = PathBuf::from(&home).join(".cache").join(d);
-                if p.is_dir() {
-                    out.push(p);
+        for browser in ["google-chrome", "chromium", "microsoft-edge"] {
+            let base = cache.join(browser);
+            if let Ok(profiles) = fs::read_dir(base) {
+                for profile in profiles.flatten() {
+                    if !profile.path().is_dir() {
+                        continue;
+                    }
+                    for name in ["Cache", "Code Cache", "GPUCache"] {
+                        let path = profile.path().join(name);
+                        if path.is_dir() {
+                            out.push(path);
+                        }
+                    }
+                }
+            }
+        }
+        let firefox = cache.join("mozilla/firefox");
+        if let Ok(profiles) = fs::read_dir(firefox) {
+            for profile in profiles.flatten() {
+                let path = profile.path().join("cache2");
+                if path.is_dir() {
+                    out.push(path);
                 }
             }
         }
@@ -403,7 +499,19 @@ fn shader_cache_paths() -> Vec<PathBuf> {
     }
     #[cfg(not(windows))]
     {
-        Vec::new()
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            return Vec::new();
+        };
+        [
+            home.join(".cache/mesa_shader_cache"),
+            home.join(".cache/mesa_shader_cache_db"),
+            home.join(".cache/nvidia/GLCache"),
+            home.join(".nv/ComputeCache"),
+            home.join(".cache/AMD/DxCache"),
+        ]
+        .into_iter()
+        .filter(|path| path.is_dir())
+        .collect()
     }
 }
 
@@ -522,6 +630,13 @@ mod tests {
         let selected = apply_policy(&entries, Policy::KeepNewest(1));
         assert_eq!(selected.len(), 2);
         assert!(selected.iter().all(|e| e.path != PathBuf::from("new")));
+    }
+
+    #[test]
+    fn validates_cleanup_ids_before_mutation() {
+        assert!(validate_ids(&[]).is_err());
+        assert!(validate_ids(&["not_a_category".to_string()]).is_err());
+        assert!(validate_ids(&["user_temp".to_string(), "shader_cache".to_string()]).is_ok());
     }
 
     #[test]

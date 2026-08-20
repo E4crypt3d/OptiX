@@ -16,11 +16,14 @@ pub async fn list_processes() -> Result<Vec<ProcessDetail>> {
 }
 
 fn list_processes_blocking() -> Result<Vec<ProcessDetail>> {
+    use std::time::Duration;
     use sysinfo::{ProcessesToUpdate, System};
 
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);
-    // Second refresh yields meaningful CPU deltas.
+    // A short sample window prevents the first refresh from reporting zero CPU
+    // for every process and keeps the result useful on Linux as well.
+    std::thread::sleep(Duration::from_millis(100));
     sys.refresh_processes(ProcessesToUpdate::All, true);
 
     let mut out: Vec<ProcessDetail> = sys
@@ -111,9 +114,15 @@ pub fn set_process_priority(pid: u32, priority: String) -> Result<()> {
 #[tauri::command]
 pub fn apply_gaming_mode(
     state: State<'_, OptimizerState>,
-    game_pids: Vec<u32>,
-    background_pids: Vec<u32>,
+    mut game_pids: Vec<u32>,
+    mut background_pids: Vec<u32>,
 ) -> Result<GamingModeResult> {
+    game_pids.sort_unstable();
+    game_pids.dedup();
+    background_pids.sort_unstable();
+    background_pids.dedup();
+    validate_gaming_pids(&game_pids, &background_pids)?;
+
     use sysinfo::System;
     let sys = System::new_all();
     let name_of = move |pid: u32| -> String {
@@ -134,6 +143,39 @@ pub fn apply_gaming_mode(
 #[tauri::command]
 pub fn restore_gaming_mode(state: State<'_, OptimizerState>) -> Result<usize> {
     Ok(crate::engine::optimizer::restore(&state))
+}
+
+/// Validate gaming-mode targets at the backend boundary. A process cannot be
+/// both boosted and lowered, and required/system processes are never touched.
+fn validate_gaming_pids(game_pids: &[u32], background_pids: &[u32]) -> Result<()> {
+    use std::collections::HashSet;
+    use sysinfo::{Pid, ProcessesToUpdate, System};
+
+    let game_set: HashSet<u32> = game_pids.iter().copied().collect();
+    if background_pids.iter().any(|pid| game_set.contains(pid)) {
+        return Err(OptixError::InvalidState(
+            "a process cannot be both game and background".into(),
+        ));
+    }
+
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    for pid in game_pids.iter().chain(background_pids) {
+        let Some(process) = sys.process(Pid::from_u32(*pid)) else {
+            return Err(OptixError::InvalidState(format!(
+                "process {pid} is no longer running"
+            )));
+        };
+        let name = process.name().to_string_lossy().into_owned();
+        if is_system_process(&name, process.session_id().map(|s| s.as_u32()))
+            || classify(&name) == crate::models::process::ProcessClass::Required
+        {
+            return Err(OptixError::NotPermitted(format!(
+                "protected system process cannot be used in gaming mode: {name}"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Protect against killing/deprioritizing system processes and Optix itself.

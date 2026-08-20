@@ -16,7 +16,11 @@ pub async fn scan_cleanup() -> Result<Vec<CleanupCategory>> {
 
 /// Run cleanup: snapshot-first, then delete the selected categories' contents.
 #[tauri::command]
-pub async fn run_cleanup(db: State<'_, Database>, ids: Vec<String>) -> Result<CleanupResult> {
+pub async fn run_cleanup(db: State<'_, Database>, mut ids: Vec<String>) -> Result<CleanupResult> {
+    ids.sort();
+    ids.dedup();
+    cleanup::validate_ids(&ids)?;
+
     let snapshot = snapshot::create_lightweight(
         db.inner(),
         "Cleanup",
@@ -59,9 +63,9 @@ pub async fn run_cleanup(db: State<'_, Database>, ids: Vec<String>) -> Result<Cl
         };
         rollback::record_change(db.inner(), &result.snapshot_id, change)?;
 
-        result.freed_bytes += o.freed_bytes;
-        result.files_removed += o.files_removed;
-        result.files_skipped += o.files_skipped;
+        result.freed_bytes = result.freed_bytes.saturating_add(o.freed_bytes);
+        result.files_removed = result.files_removed.saturating_add(o.files_removed);
+        result.files_skipped = result.files_skipped.saturating_add(o.files_skipped);
         result.categories.push(CategoryResult {
             id: o.id,
             before_bytes: o.before_bytes,
@@ -78,6 +82,21 @@ pub async fn run_cleanup(db: State<'_, Database>, ids: Vec<String>) -> Result<Cl
 /// `resetbase`). Admin required; streamed output returned for the UI.
 #[tauri::command]
 pub async fn dism_component_cleanup(db: State<'_, Database>) -> Result<String> {
+    #[cfg(windows)]
+    {
+        return dism_component_cleanup_windows(db).await;
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = db;
+        Err(crate::error::OptixError::UnsupportedPlatform(
+            "DISM component cleanup".into(),
+        ))
+    }
+}
+
+#[cfg(windows)]
+async fn dism_component_cleanup_windows(db: State<'_, Database>) -> Result<String> {
     let snapshot = snapshot::create_lightweight(
         db.inner(),
         "DISM component cleanup",

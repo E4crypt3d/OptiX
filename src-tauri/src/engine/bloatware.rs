@@ -4,6 +4,7 @@
 //! (the command layer records each change).
 
 use crate::models::bloatware::AppxPackage;
+use std::collections::HashSet;
 use crate::win::appx;
 
 /// Packages Optix must never flag. Includes the Xbox gaming components and
@@ -16,6 +17,7 @@ const PROTECTED: &[&str] = &[
     "microsoft.windowsstore",
     "microsoft.windowsterminal",
     "microsoft.windowscamera",
+    "microsoft.xbox",
     "microsoft.xboxgamingoverlay",
     "microsoft.xboxgamecallableui",
     "microsoft.xboxidentityprovider",
@@ -101,17 +103,19 @@ pub fn scan() -> Result<Vec<AppxPackage>, String> {
     let provisioned = appx::list_provisioned().unwrap_or_default();
 
     let mut out = Vec::new();
+    let mut seen = HashSet::new();
     for raw in installed {
         let name = raw.name.unwrap_or_default();
         let full_name = raw.full_name.unwrap_or_default();
-        if name.is_empty() || full_name.is_empty() {
+        if name.is_empty() || full_name.is_empty() || !seen.insert(full_name.clone()) {
             continue;
         }
+        let name_lower = name.to_ascii_lowercase();
         let provisioned = provisioned.iter().any(|p| {
             let display = p.display_name.as_deref().unwrap_or_default();
             let package = p.package_name.as_deref().unwrap_or_default();
             display.eq_ignore_ascii_case(&name)
-                || (!package.is_empty() && package.starts_with(&name))
+                || (!package.is_empty() && package.to_ascii_lowercase().starts_with(&name_lower))
         });
         let classification = classify(&name).to_string();
         out.push(AppxPackage {
@@ -135,8 +139,40 @@ pub fn scan() -> Result<Vec<AppxPackage>, String> {
             _ => 3,
         }
     }
-    out.sort_by(|a, b| rank(&a.classification).cmp(&rank(&b.classification)).then_with(|| a.name.cmp(&b.name)));
+    out.sort_by(|a, b| {
+        rank(&a.classification)
+            .cmp(&rank(&b.classification))
+            .then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+            .then_with(|| a.full_name.cmp(&b.full_name))
+    });
     Ok(out)
+}
+
+/// Validate package names against a fresh installed-package scan before any
+/// snapshot or mutation. The frontend is not a security boundary.
+pub fn validate_removal(full_names: &[String]) -> Result<(), String> {
+    if full_names.is_empty() {
+        return Err("select at least one package".to_string());
+    }
+    let installed = appx::list_installed()?;
+    for full_name in full_names {
+        let Some(raw) = installed
+            .iter()
+            .find(|package| package.full_name.as_deref() == Some(full_name.as_str()))
+        else {
+            return Err(format!("package is no longer installed: {full_name}"));
+        };
+        let name = raw.name.as_deref().unwrap_or_default();
+        match classify(name) {
+            "removal" | "caution" => {}
+            classification => {
+                return Err(format!(
+                    "package cannot be removed by this tool ({classification}): {name}"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Remove the given packages (by full name). Each package's provisioned copy
@@ -165,7 +201,10 @@ pub fn remove(full_names: &[String]) -> Vec<AppxOutcome> {
                     let display = p.display_name.as_deref().unwrap_or_default();
                     let package = p.package_name.as_deref().unwrap_or_default();
                     display.eq_ignore_ascii_case(&name)
-                        || (!package.is_empty() && package.starts_with(&name))
+                        || (!package.is_empty()
+                            && package
+                                .to_ascii_lowercase()
+                                .starts_with(&name.to_ascii_lowercase()))
                 })
                 .collect();
 
@@ -242,5 +281,11 @@ mod tests {
             family_of("Microsoft.WindowsCalculator_10.1.2.3_x64__8wekyb3d8bbwe"),
             "Microsoft.WindowsCalculator"
         );
+    }
+
+    #[test]
+    fn protects_every_xbox_family() {
+        assert_eq!(classify("Microsoft.XboxApp"), "protected");
+        assert_eq!(classify("Microsoft.Xbox.TCUI"), "protected");
     }
 }

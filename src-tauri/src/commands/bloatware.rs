@@ -19,8 +19,12 @@ pub async fn scan_bloatware() -> Result<Vec<AppxPackage>> {
 #[tauri::command]
 pub async fn remove_bloatware(
     db: State<'_, Database>,
-    full_names: Vec<String>,
+    mut full_names: Vec<String>,
 ) -> Result<BloatwareRemoveResult> {
+    full_names.sort();
+    full_names.dedup();
+    bloatware::validate_removal(&full_names).map_err(OptixError::Other)?;
+
     let snapshot = snapshot::create_lightweight(
         db.inner(),
         "Bloatware",

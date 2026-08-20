@@ -109,7 +109,89 @@ pub fn detect_gpus() -> Vec<GpuInfo> {
 
 #[cfg(not(windows))]
 pub fn detect_gpus() -> Vec<GpuInfo> {
-    Vec::new()
+    use std::collections::HashSet;
+    use std::process::Command;
+
+    let mut gpus = Vec::new();
+    let mut seen = HashSet::new();
+
+    // pciutils is present on most desktop Linux installations and provides the
+    // actual adapter model, including integrated Intel/AMD graphics.
+    if let Ok(output) = Command::new("lspci").arg("-nn").output() {
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let lower = line.to_ascii_lowercase();
+            if !lower.contains("vga compatible controller")
+                && !lower.contains("3d controller")
+                && !lower.contains("display controller")
+            {
+                continue;
+            }
+            let Some((_, description)) = line.split_once(": ") else {
+                continue;
+            };
+            let name = description
+                .split(" [")
+                .next()
+                .unwrap_or(description)
+                .split(" (rev")
+                .next()
+                .unwrap_or(description)
+                .trim()
+                .to_string();
+            if name.is_empty() || !seen.insert(name.to_ascii_lowercase()) {
+                continue;
+            }
+            let name_lower = name.to_ascii_lowercase();
+            let vendor = if name_lower.contains("nvidia") {
+                "NVIDIA"
+            } else if name_lower.contains("amd") || name_lower.contains("ati") {
+                "AMD"
+            } else if name_lower.contains("intel") {
+                "Intel"
+            } else {
+                ""
+            };
+            gpus.push(GpuInfo {
+                name,
+                vendor: vendor.to_string(),
+                driver_version: String::new(),
+                memory_bytes: 0,
+                usage_percent: 0.0,
+            });
+        }
+    }
+
+    // Sysfs still identifies the GPU vendor when lspci/pciutils is missing.
+    if gpus.is_empty() {
+        if let Ok(entries) = std::fs::read_dir("/sys/class/drm") {
+            for entry in entries.flatten() {
+                let card = entry.file_name().to_string_lossy().into_owned();
+                if !card.starts_with("card") || card.contains('-') {
+                    continue;
+                }
+                let vendor_id = std::fs::read_to_string(format!(
+                    "/sys/class/drm/{card}/device/vendor"
+                ))
+                .unwrap_or_default();
+                let vendor = match vendor_id.trim().to_ascii_lowercase().as_str() {
+                    "0x8086" => "Intel",
+                    "0x1002" => "AMD",
+                    "0x10de" => "NVIDIA",
+                    _ => "Unknown",
+                };
+                gpus.push(GpuInfo {
+                    name: format!("{vendor} graphics adapter"),
+                    vendor: vendor.to_string(),
+                    driver_version: String::new(),
+                    memory_bytes: 0,
+                    usage_percent: 0.0,
+                });
+            }
+        }
+    }
+
+    gpus
 }
 
 /// Enumerate active Windows displays with their current mode.
@@ -192,7 +274,58 @@ pub fn displays() -> Vec<DisplayInfo> {
 
 #[cfg(not(windows))]
 pub fn displays() -> Vec<DisplayInfo> {
-    Vec::new()
+    let Ok(entries) = std::fs::read_dir("/sys/class/drm") else {
+        return Vec::new();
+    };
+
+    let mut displays = Vec::new();
+    for entry in entries.flatten() {
+        let connector = entry.file_name().to_string_lossy().into_owned();
+        if !connector.starts_with("card") || !connector.contains('-') {
+            continue;
+        }
+        let status = std::fs::read_to_string(entry.path().join("status")).unwrap_or_default();
+        if status.trim() != "connected" {
+            continue;
+        }
+        let mode = std::fs::read_to_string(entry.path().join("modes"))
+            .ok()
+            .and_then(|modes| modes.lines().find_map(parse_display_mode));
+        let Some((width, height)) = mode else {
+            continue;
+        };
+        let name = connector
+            .split_once('-')
+            .map(|(_, output)| output.to_string())
+            .unwrap_or(connector);
+        displays.push(DisplayInfo {
+            name,
+            width,
+            height,
+            refresh_rate: 0,
+            is_primary: false,
+        });
+    }
+
+    // Prefer the internal panel when multiple connectors are present; the
+    // first connected output is otherwise the best available primary hint.
+    displays.sort_by_key(|display| {
+        if display.name.starts_with("eDP") || display.name.starts_with("LVDS") {
+            0
+        } else {
+            1
+        }
+    });
+    if let Some(primary) = displays.first_mut() {
+        primary.is_primary = true;
+    }
+    displays
+}
+
+#[cfg(not(windows))]
+fn parse_display_mode(mode: &str) -> Option<(u32, u32)> {
+    let (width, height) = mode.trim().split_once('x')?;
+    Some((width.parse().ok()?, height.parse().ok()?))
 }
 
 /// Enumerate startup applications from the HKLM/HKCU `Run` keys.

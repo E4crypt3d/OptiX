@@ -104,7 +104,8 @@ pub fn list_provisioned() -> Result<Vec<RawProvisioned>, String> {
 /// Remove an installed package for the current user.
 #[cfg(windows)]
 pub fn remove_installed(full_name: &str) -> Result<(), String> {
-    let script = format!("Remove-AppxPackage -Package '{full_name}' -ErrorAction Stop");
+    let escaped = full_name.replace('\'', "''");
+    let script = format!("Remove-AppxPackage -Package '{escaped}' -ErrorAction Stop");
     run_powershell(&script)?;
     Ok(())
 }
@@ -117,8 +118,9 @@ pub fn remove_installed(_full_name: &str) -> Result<(), String> {
 /// Remove a provisioned package so it does not reinstall for new users.
 #[cfg(windows)]
 pub fn remove_provisioned(package_name: &str) -> Result<(), String> {
+    let escaped = package_name.replace('\'', "''");
     let script =
-        format!("Remove-AppxProvisionedPackage -Online -PackageName '{package_name}' -ErrorAction Stop");
+        format!("Remove-AppxProvisionedPackage -Online -PackageName '{escaped}' -ErrorAction Stop");
     run_powershell(&script)?;
     Ok(())
 }
