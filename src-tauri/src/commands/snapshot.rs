@@ -2,7 +2,7 @@ use serde_json::Value;
 use tauri::State;
 
 use crate::db::sqlite::Database;
-use crate::engine::{rollback, snapshot};
+use crate::engine::{now_ms, rollback, snapshot};
 use crate::error::{OptixError, Result};
 use crate::models::snapshot::{ChangeRecord, Snapshot};
 
@@ -35,9 +35,18 @@ pub fn delete_snapshot(db: State<'_, Database>, id: String) -> Result<()> {
     snapshot::delete(db.inner(), &id)
 }
 
+/// Restore a snapshot's changes in reverse order. The heavy per-change
+/// rollbacks (registry writes, service starts, appx reinstalls) run off the
+/// main thread; the snapshot is marked restored only when every change
+/// succeeded.
 #[tauri::command]
-pub fn restore_snapshot(db: State<'_, Database>, id: String) -> Result<usize> {
-    rollback::restore(db.inner(), &id)
+pub async fn restore_snapshot(db: State<'_, Database>, id: String) -> Result<usize> {
+    let changes = rollback::load(db.inner(), &id)?;
+    let reverted = tauri::async_runtime::spawn_blocking(move || rollback::apply_reverse(&changes))
+        .await
+        .map_err(|e| OptixError::Other(e.to_string()))??;
+    db.mark_snapshot_restored(&id, now_ms() as i64)?;
+    Ok(reverted)
 }
 
 #[tauri::command]

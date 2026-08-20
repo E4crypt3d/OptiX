@@ -1,15 +1,21 @@
 use std::fs;
+use std::sync::Mutex;
 
 use serde_json::{json, Value};
 
 use crate::db::sqlite::{snapshots_dir, Database};
 use crate::error::{OptixError, Result};
-use crate::models::snapshot::{ChangeRecord, SnapshotStatus};
+use crate::models::snapshot::ChangeRecord;
 
-/// Record a change against a snapshot: append to `changes.json` and the DB.
-/// Called by the mutation phases (cleanup, power, services, …) as they apply
-/// changes.
-#[allow(dead_code)]
+/// Serializes restores so two concurrent restores of the same snapshot can't
+/// double-apply — some domains (appx reinstalls, GPU profile removal) are not
+/// idempotent.
+static RESTORE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Record a change against a snapshot. Called by the mutation phases (cleanup,
+/// power, services, …) as they apply changes. The DB is the single source of
+/// truth — the on-disk snapshot JSON holds captured state only, so there's no
+/// side file to keep in sync (or race on).
 pub fn record_change(
     db: &Database,
     snapshot_id: &str,
@@ -17,50 +23,94 @@ pub fn record_change(
 ) -> Result<ChangeRecord> {
     change.snapshot_id = snapshot_id.to_string();
     change.applied_at_ms = Some(super::now_ms() as i64);
-
-    let path = changes_file(snapshot_id);
-    let mut changes: Vec<ChangeRecord> = if path.exists() {
-        serde_json::from_str(&fs::read_to_string(&path)?)?
-    } else {
-        Vec::new()
-    };
-    changes.push(change.clone());
-    fs::write(&path, serde_json::to_string_pretty(&changes)?)?;
     db.insert_change(&change)?;
     Ok(change)
 }
 
-/// Restore a snapshot: apply its changes in reverse order.
-pub fn restore(db: &Database, snapshot_id: &str) -> Result<usize> {
-    let snapshot = db
-        .get_snapshot(snapshot_id)?
+/// Load a snapshot's changes, validating that the snapshot exists.
+pub fn load(db: &Database, snapshot_id: &str) -> Result<Vec<ChangeRecord>> {
+    db.get_snapshot(snapshot_id)?
         .ok_or_else(|| OptixError::InvalidState(format!("snapshot {snapshot_id} not found")))?;
-
-    let changes = db.list_changes(snapshot_id)?;
-    let mut restored = 0usize;
-    for change in changes.iter().rev() {
-        rollback_change(change)?;
-        restored += 1;
-    }
-
-    db.update_snapshot_status(&snapshot.id, SnapshotStatus::Restored)?;
-    Ok(restored)
+    db.list_changes(snapshot_id)
 }
 
-fn rollback_change(change: &ChangeRecord) -> Result<()> {
-    match change.domain.as_str() {
-        "registry" => crate::win::registry::rollback_registry(change),
-        "power" => crate::win::power::rollback_power(change),
-        "service" => crate::win::services::rollback_service(change),
-        "gpu" => crate::win::gpu::rollback_gpu(change),
-        "appx" => crate::win::appx::rollback_appx(change),
+/// Apply a snapshot's changes in reverse order. Every change is attempted — a
+/// failure in one doesn't abort the rest, so a single bad entry can't leave
+/// the remaining reversions unapplied. Returns the number of changes actually
+/// reverted; `Err` lists the failures when any occurred.
+pub fn apply_reverse(changes: &[ChangeRecord]) -> Result<usize> {
+    let _guard = RESTORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut reverted = 0usize;
+    let mut failures = Vec::new();
+    for change in changes.iter().rev() {
+        match rollback_change(change) {
+            Ok(RollbackOutcome::Reverted) => reverted += 1,
+            Ok(RollbackOutcome::Skipped) => {}
+            Err(e) => failures.push(format!("{}: {e}", change.location)),
+        }
+    }
+    if failures.is_empty() {
+        Ok(reverted)
+    } else {
+        Err(OptixError::InvalidState(format!(
+            "restored {reverted} of {} changes; failed: {}",
+            changes.len(),
+            failures.join("; ")
+        )))
+    }
+}
+
+/// Restore a snapshot: load its changes, apply them in reverse order, and —
+/// only when every one succeeded — mark the snapshot restored with a
+/// timestamp. On partial failure the snapshot stays active so the user can
+/// retry.
+pub fn restore(db: &Database, snapshot_id: &str) -> Result<usize> {
+    let changes = load(db, snapshot_id)?;
+    let reverted = apply_reverse(&changes)?;
+    db.mark_snapshot_restored(snapshot_id, super::now_ms() as i64)?;
+    Ok(reverted)
+}
+
+enum RollbackOutcome {
+    /// The change was actually reversed.
+    Reverted,
+    /// Recorded for audit but not reversible (file deletions) — counted as
+    /// neither reverted nor failed.
+    Skipped,
+}
+
+fn rollback_change(change: &ChangeRecord) -> Result<RollbackOutcome> {
+    let outcome = match change.domain.as_str() {
+        "registry" => {
+            crate::win::registry::rollback_registry(change)?;
+            RollbackOutcome::Reverted
+        }
+        "power" => {
+            crate::win::power::rollback_power(change)?;
+            RollbackOutcome::Reverted
+        }
+        "service" => {
+            crate::win::services::rollback_service(change)?;
+            RollbackOutcome::Reverted
+        }
+        "gpu" => {
+            crate::win::gpu::rollback_gpu(change)?;
+            RollbackOutcome::Reverted
+        }
+        "appx" => {
+            crate::win::appx::rollback_appx(change)?;
+            RollbackOutcome::Reverted
+        }
         // File deletions (cleanup / shader caches) are recorded for audit but
         // not reversible — restoring a snapshot skips them instead of failing.
-        "file" => Ok(()),
-        other => Err(OptixError::InvalidState(format!(
-            "rollback not implemented for domain '{other}'"
-        ))),
-    }
+        "file" => RollbackOutcome::Skipped,
+        other => {
+            return Err(OptixError::InvalidState(format!(
+                "rollback not implemented for domain '{other}'"
+            )))
+        }
+    };
+    Ok(outcome)
 }
 
 /// Structural diff of two snapshots' JSON files.
@@ -92,6 +142,12 @@ fn load_dir(dir: &std::path::Path) -> Result<Value> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("?")
                 .to_string();
+            // The change ledger and creation timestamp are per-snapshot
+            // bookkeeping, not captured state — including them would make
+            // every diff show constant `changed` noise between snapshots.
+            if matches!(name.as_str(), "changes" | "timestamp") {
+                continue;
+            }
             if let Ok(text) = fs::read_to_string(&path) {
                 if let Ok(val) = serde_json::from_str(&text) {
                     map.insert(name, val);
@@ -129,11 +185,6 @@ fn diff_into(a: &Value, b: &Value, path: &str, out: &mut Vec<Value>) {
     }
 }
 
-#[allow(dead_code)]
-fn changes_file(snapshot_id: &str) -> std::path::PathBuf {
-    snapshots_dir().join(snapshot_id).join("changes.json")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +205,101 @@ mod tests {
         let a = json!({ "x": 1 });
         let b = json!({ "x": 1 });
         assert_eq!(diff_values(&a, &b, "$").as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn load_dir_excludes_bookkeeping_files() {
+        let dir = std::env::temp_dir().join(format!("optix-rollback-diff-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("system.json"), r#"{"host":"pc"}"#).unwrap();
+        fs::write(dir.join("registry.json"), r#"{"HAGS":"1"}"#).unwrap();
+        fs::write(dir.join("changes.json"), "[1]").unwrap();
+        fs::write(dir.join("timestamp.json"), r#"{"created_at_ms":1}"#).unwrap();
+        let map = load_dir(&dir).unwrap();
+        let obj = map.as_object().unwrap();
+        assert!(obj.contains_key("system"));
+        assert!(obj.contains_key("registry"));
+        assert!(!obj.contains_key("changes"));
+        assert!(!obj.contains_key("timestamp"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn restore_skips_file_changes_and_marks_restored() {
+        use crate::db::sqlite::Database;
+        use crate::models::snapshot::{Snapshot, SnapshotStatus};
+
+        let db = Database::open_in_memory().unwrap();
+        db.insert_snapshot(&Snapshot {
+            id: "s1".into(),
+            name: "cleanup".into(),
+            reason: None,
+            created_at_ms: 1,
+            restored_at_ms: None,
+            status: SnapshotStatus::Active,
+        })
+        .unwrap();
+        db.insert_change(&ChangeRecord {
+            id: None,
+            snapshot_id: "s1".into(),
+            domain: "file".into(),
+            location: "/tmp/x".into(),
+            kind: "delete".into(),
+            old_value: None,
+            new_value: None,
+            old_json: None,
+            new_json: None,
+            applied_at_ms: Some(2),
+            verified: true,
+            rolled_back: false,
+        })
+        .unwrap();
+
+        // File deletions are audit-only: nothing to revert, status still flips.
+        assert_eq!(restore(&db, "s1").unwrap(), 0);
+        let s = db.get_snapshot("s1").unwrap().unwrap();
+        assert_eq!(s.status, SnapshotStatus::Restored);
+        assert!(s.restored_at_ms.is_some());
+    }
+
+    #[test]
+    fn restore_reports_partial_failures_and_stays_active() {
+        use crate::db::sqlite::Database;
+        use crate::models::snapshot::{Snapshot, SnapshotStatus};
+
+        let db = Database::open_in_memory().unwrap();
+        db.insert_snapshot(&Snapshot {
+            id: "s2".into(),
+            name: "t".into(),
+            reason: None,
+            created_at_ms: 1,
+            restored_at_ms: None,
+            status: SnapshotStatus::Active,
+        })
+        .unwrap();
+        db.insert_change(&ChangeRecord {
+            id: None,
+            snapshot_id: "s2".into(),
+            domain: "bogus".into(),
+            location: "HKLM\\X".into(),
+            kind: "set".into(),
+            old_value: Some("1".into()),
+            new_value: Some("2".into()),
+            old_json: None,
+            new_json: None,
+            applied_at_ms: Some(2),
+            verified: true,
+            rolled_back: false,
+        })
+        .unwrap();
+
+        let err = restore(&db, "s2").unwrap_err();
+        assert!(err.to_string().contains("restored 0 of 1 changes"));
+        assert!(err.to_string().contains("bogus"));
+        // Partial restore: snapshot stays active so the user can retry.
+        let s = db.get_snapshot("s2").unwrap().unwrap();
+        assert_eq!(s.status, SnapshotStatus::Active);
+        assert!(s.restored_at_ms.is_none());
     }
 }

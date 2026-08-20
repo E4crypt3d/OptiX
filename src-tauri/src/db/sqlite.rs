@@ -160,6 +160,14 @@ fn migrate(conn: &Connection) -> Result<()> {
     // IF NOT EXISTS` cannot alter it and `ensure_columns` only appends nullable
     // columns, so rebuild it to the current schema.
     migrate_snapshots_table(conn)?;
+    // The first-release `changes`/`hardware_history`/`benchmarks` tables
+    // carried NOT NULL legacy columns (`change_type`/`timestamp_ms`,
+    // `scanned_at_ms`/`data`, `metrics`/`created_at_ms`) that the current
+    // inserts no longer supply — appending columns isn't enough, so rebuild
+    // them in the current shape (same rationale as `migrate_snapshots_table`).
+    migrate_changes_table(conn)?;
+    migrate_hardware_history_table(conn)?;
+    migrate_benchmarks_table(conn)?;
     conn.pragma_update(None, "user_version", 1)?;
     Ok(())
 }
@@ -276,6 +284,140 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, decl: &str) -> Re
 /// mismatch`. Recreate the table in the current shape, mapping `description` /
 /// `created_at_ms` onto `reason` / `created_at` (and stringifying the integer
 /// `id` so any pre-existing `changes` FK references stay valid).
+/// Rebuild a first-release `changes` table that the current schema cannot use.
+///
+/// The original Optix release defined `changes` with `change_type` /
+/// `timestamp_ms` and no `domain`/`kind`; the current schema renamed the
+/// former and added the latter. `CREATE TABLE IF NOT EXISTS` cannot alter it
+/// and `ensure_columns` only appends nullable columns, so rebuild it in the
+/// current shape, mapping `change_type` → `domain` and `timestamp_ms` →
+/// `applied_at` so any recorded changes survive. Records from that era had no
+/// `kind`; they default to `set`.
+fn migrate_changes_table(conn: &Connection) -> Result<()> {
+    // Only the shipped first-release shape needs this; the intermediate and
+    // current shapes are handled by `ensure_columns`.
+    if !table_has_column(conn, "changes", "change_type")? {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "PRAGMA foreign_keys = OFF;
+         CREATE TABLE changes_new (
+             id           INTEGER PRIMARY KEY,
+             snapshot_id  TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+             domain       TEXT NOT NULL,
+             location     TEXT NOT NULL,
+             kind         TEXT NOT NULL,
+             old_value    TEXT,
+             new_value    TEXT,
+             old_json     TEXT,
+             new_json     TEXT,
+             applied_at   INTEGER,
+             verified     INTEGER DEFAULT 0,
+             rolled_back  INTEGER DEFAULT 0
+         );
+         INSERT INTO changes_new
+             (id, snapshot_id, domain, location, kind, old_value, new_value,
+              old_json, new_json, applied_at, verified, rolled_back)
+             SELECT id, snapshot_id, change_type, location, 'set',
+                    old_value, new_value, old_json, new_json,
+                    COALESCE(applied_at, timestamp_ms),
+                    COALESCE(verified, 0), COALESCE(rolled_back, 0)
+             FROM changes;
+         DROP TABLE changes;
+         ALTER TABLE changes_new RENAME TO changes;
+         PRAGMA foreign_keys = ON;",
+    )?;
+    Ok(())
+}
+
+/// Rebuild a first-release `hardware_history` table. The original stored a
+/// `scanned_at_ms`/`data` pair (both NOT NULL) — the current insert supplies
+/// typed columns instead, so the legacy constraints would reject every new
+/// sample. Rebuild in the current shape, mapping `scanned_at_ms` → `ts`.
+fn migrate_hardware_history_table(conn: &Connection) -> Result<()> {
+    if !table_has_column(conn, "hardware_history", "scanned_at_ms")? {
+        return Ok(()); // already the current schema.
+    }
+    conn.execute_batch(
+        "PRAGMA foreign_keys = OFF;
+         CREATE TABLE hardware_history_new (
+             id            INTEGER PRIMARY KEY,
+             ts            INTEGER NOT NULL,
+             cpu_usage     REAL,
+             cpu_temp      REAL,
+             ram_used_mb   INTEGER,
+             ram_total_mb  INTEGER,
+             gpu_usage     REAL,
+             gpu_temp      REAL,
+             gpu_vram_mb   INTEGER,
+             gpu_power_w   REAL,
+             disk_used_mb  INTEGER,
+             disk_total_mb INTEGER,
+             net_down_bps  INTEGER,
+             net_up_bps    INTEGER,
+             fps           REAL,
+             frame_time_ms REAL
+         );
+         INSERT INTO hardware_history_new
+             (id, ts, cpu_usage, cpu_temp, ram_used_mb, ram_total_mb, gpu_usage,
+              gpu_temp, gpu_vram_mb, gpu_power_w, disk_used_mb, disk_total_mb,
+              net_down_bps, net_up_bps, fps, frame_time_ms)
+             SELECT id, scanned_at_ms, cpu_usage, cpu_temp, ram_used_mb,
+                    ram_total_mb, gpu_usage, gpu_temp, gpu_vram_mb, gpu_power_w,
+                    disk_used_mb, disk_total_mb, net_down_bps, net_up_bps, fps,
+                    frame_time_ms
+             FROM hardware_history;
+         DROP TABLE hardware_history;
+         ALTER TABLE hardware_history_new RENAME TO hardware_history;
+         PRAGMA foreign_keys = ON;",
+    )?;
+    Ok(())
+}
+
+/// Rebuild a first-release `benchmarks` table. The original stored a
+/// `metrics` blob + `created_at_ms` (both NOT NULL); the current insert
+/// supplies typed columns instead, so the legacy constraints would reject
+/// every new run. Rebuild in the current shape (typed columns, which
+/// `ensure_columns` appended, carry over as-is).
+fn migrate_benchmarks_table(conn: &Connection) -> Result<()> {
+    if !table_has_column(conn, "benchmarks", "metrics")? {
+        return Ok(()); // already the current schema.
+    }
+    conn.execute_batch(
+        "PRAGMA foreign_keys = OFF;
+         CREATE TABLE benchmarks_new (
+             id                 INTEGER PRIMARY KEY,
+             game_id            INTEGER REFERENCES games(id),
+             game_name          TEXT,
+             started_at         INTEGER,
+             duration_ms        INTEGER,
+             avg_fps            REAL,
+             p1_fps             REAL,
+             p01_fps            REAL,
+             avg_frame_time_ms  REAL,
+             p95_frame_time_ms  REAL,
+             cpu_avg            REAL,
+             gpu_avg            REAL,
+             ram_avg_mb         REAL,
+             latency_ms         REAL,
+             config_hash        TEXT,
+             csv_path           TEXT
+         );
+         INSERT INTO benchmarks_new
+             (id, game_id, game_name, started_at, duration_ms, avg_fps, p1_fps,
+              p01_fps, avg_frame_time_ms, p95_frame_time_ms, cpu_avg, gpu_avg,
+              ram_avg_mb, latency_ms, config_hash, csv_path)
+             SELECT id, game_id, game_name, started_at, duration_ms, avg_fps,
+                    p1_fps, p01_fps, avg_frame_time_ms, p95_frame_time_ms,
+                    cpu_avg, gpu_avg, ram_avg_mb, latency_ms, config_hash, csv_path
+             FROM benchmarks;
+         DROP TABLE benchmarks;
+         ALTER TABLE benchmarks_new RENAME TO benchmarks;
+         PRAGMA foreign_keys = ON;",
+    )?;
+    Ok(())
+}
+
 fn migrate_snapshots_table(conn: &Connection) -> Result<()> {
     if !table_has_column(conn, "snapshots", "path")? {
         return Ok(()); // already the current schema.
@@ -334,7 +476,7 @@ impl Database {
 
     /// Open an in-memory database (used by tests).
     #[cfg(test)]
-    fn open_in_memory() -> Result<Self> {
+    pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         migrate(&conn)?;
         Ok(Self {
@@ -442,11 +584,12 @@ impl Database {
         rows.next().transpose().map_err(Into::into)
     }
 
-    pub fn update_snapshot_status(&self, id: &str, status: SnapshotStatus) -> Result<()> {
+    /// Mark a snapshot as restored and stamp when the restore happened.
+    pub fn mark_snapshot_restored(&self, id: &str, restored_at_ms: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "UPDATE snapshots SET status = ?1 WHERE id = ?2",
-            rusqlite::params![status.as_str(), id],
+            "UPDATE snapshots SET status = 'restored', restored_at = ?1 WHERE id = ?2",
+            rusqlite::params![restored_at_ms, id],
         )?;
         Ok(())
     }
@@ -457,9 +600,7 @@ impl Database {
         Ok(())
     }
 
-    // Invoked by engine::rollback::record_change once mutation phases (cleanup,
-    // power, services) start writing changes.
-    #[allow(dead_code)]
+    /// Record a single reversible mutation for a snapshot.
     pub fn insert_change(&self, c: &ChangeRecord) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -928,5 +1069,129 @@ mod tests {
         conn.execute("SELECT old_json, new_json, verified, rolled_back FROM changes", []).unwrap();
         conn.execute("SELECT affinity_mask, cleanup_bg, gpu_profile, enabled FROM game_profiles", [])
             .unwrap();
+    }
+
+    #[test]
+    fn migration_rebuilds_legacy_changes_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The first Optix release's changes table: change_type/timestamp_ms, no
+        // domain/kind. snapshots is already the current TEXT-id shape.
+        conn.execute_batch(
+            "CREATE TABLE snapshots (id TEXT PRIMARY KEY, name TEXT, created_at INTEGER, restored_at INTEGER, status TEXT);
+             INSERT INTO snapshots (id, name, created_at, status) VALUES ('1', 'legacy', 111, 'active');
+             CREATE TABLE changes (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+                 change_type TEXT NOT NULL,
+                 location TEXT NOT NULL,
+                 old_value TEXT,
+                 new_value TEXT,
+                 timestamp_ms INTEGER NOT NULL
+             );
+             INSERT INTO changes (snapshot_id, change_type, location, old_value, new_value, timestamp_ms)
+                 VALUES (1, 'registry', 'HKLM\\X', '1', '2', 999);",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+
+        // The current query shape works, and the legacy row was mapped over
+        // (change_type → domain, timestamp_ms → applied_at, kind defaulted).
+        let (domain, kind, applied_at, old, new): (String, String, i64, String, String) = conn
+            .query_row(
+                "SELECT domain, kind, applied_at, old_value, new_value
+                 FROM changes WHERE snapshot_id = '1'",
+                [],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(domain, "registry");
+        assert_eq!(kind, "set");
+        assert_eq!(applied_at, 999);
+        assert_eq!((old.as_str(), new.as_str()), ("1", "2"));
+
+        // The ON DELETE CASCADE still fires on the rebuilt table.
+        conn.execute("DELETE FROM snapshots WHERE id = '1'", []).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM changes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+
+        // A second migrate is a no-op on the rebuilt table.
+        migrate(&conn).unwrap();
+    }
+
+    #[test]
+    fn migration_backfills_ts_from_scanned_at_ms() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The first-release hardware_history stored a timestamp blob pair
+        // (scanned_at_ms + data) instead of the typed columns.
+        conn.execute_batch(
+            "CREATE TABLE hardware_history (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 scanned_at_ms INTEGER NOT NULL,
+                 data TEXT NOT NULL
+             );
+             INSERT INTO hardware_history (scanned_at_ms, data) VALUES (123456, '{}');",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+
+        // ts was backfilled from the legacy column and the current insert works.
+        let ts: i64 = conn
+            .query_row("SELECT ts FROM hardware_history WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(ts, 123456);
+        conn.execute("INSERT INTO hardware_history (ts, cpu_usage) VALUES (222, 12.5)", [])
+            .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM hardware_history", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn migration_rebuilds_legacy_benchmarks_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        // The first-release benchmarks table stored a metrics blob + timestamp
+        // (both NOT NULL) instead of the typed columns.
+        conn.execute_batch(
+            "CREATE TABLE games (id INTEGER PRIMARY KEY, name TEXT);
+             CREATE TABLE benchmarks (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 game_id INTEGER REFERENCES games(id) ON DELETE CASCADE,
+                 metrics TEXT NOT NULL,
+                 created_at_ms INTEGER NOT NULL
+             );
+             INSERT INTO benchmarks (game_id, metrics, created_at_ms)
+                 VALUES (NULL, '{}', 123456);",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+
+        // The current insert shape works on the rebuilt table.
+        conn.execute(
+            "INSERT INTO benchmarks (game_name, started_at, duration_ms, avg_fps)
+             VALUES ('game', 1, 2, 60.0)",
+            [],
+        )
+        .unwrap();
+        let (n, name, fps): (i64, String, f64) = conn
+            .query_row(
+                "SELECT COUNT(*), game_name, avg_fps FROM benchmarks WHERE id = 2",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(name, "game");
+        assert_eq!(fps, 60.0);
     }
 }

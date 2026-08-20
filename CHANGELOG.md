@@ -5,6 +5,39 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-08-20
+
+### Added
+
+- **Legacy DB migrations**: first-release `changes`, `hardware_history`, and
+  `benchmarks` tables (shipped with NOT NULL legacy columns) are rebuilt to
+  the current schema on startup, mapping legacy columns over so existing
+  records survive.
+- **Restore progress in Rollback page**: the restore button shows a
+  "Restoring…" state and a confirmation prompt, the snapshot list gets a
+  manual Refresh action and created/restored timestamps, and changes load
+  with a loading state.
+
+### Changed
+
+- **DB is the single source of truth for changes**: `record_change` no longer
+  appends to an on-disk `changes.json` (removed at snapshot creation too),
+  eliminating a side file to keep in sync or race on.
+- **Async restore**: `restore_snapshot` applies the per-change rollbacks
+  (registry writes, service starts, appx reinstalls) off the main thread.
+- **Snapshot marked restored only on full success**: a snapshot stays active
+  on partial failure so the user can retry, and is stamped with a restore
+  timestamp only when every change succeeded.
+- **Serialized restores**: a global lock prevents two concurrent restores of
+  the same snapshot from double-applying non-idempotent domains.
+- **Rollback continues past individual failures**: a single bad change no
+  longer aborts the remaining reversions; the error aggregates reverted/failed
+  counts.
+- **Non-reversible changes are skipped, not failed**: recorded file deletions
+  are counted as neither reverted nor failed.
+- **Diff noise removed**: snapshot diffs skip `changes` / `timestamp`
+  bookkeeping files, leaving only captured state.
+
 ## [0.14.0] - 2026-08-20
 
 ### Added

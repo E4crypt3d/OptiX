@@ -42,7 +42,6 @@ fn create_with_system(db: &Database, name: &str, reason: Option<&str>, system: V
         dir.join("registry.json"),
         serde_json::to_string_pretty(&crate::win::registry::capture_gaming_toggles())?,
     )?;
-    fs::write(dir.join("changes.json"), "[]")?;
     fs::write(
         dir.join("timestamp.json"),
         serde_json::json!({ "created_at_ms": created_at_ms }).to_string(),

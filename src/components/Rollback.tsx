@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftRight, Undo2 } from "lucide-react";
+import { ArrowLeftRight, RefreshCw, Undo2 } from "lucide-react";
 import {
   diffSnapshots,
   listChanges,
@@ -32,12 +32,17 @@ export function Rollback() {
   const [diff, setDiff] = useState<DiffEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [changesLoading, setChangesLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
       setSnapshots(await listSnapshots());
     } catch (e) {
       setError(errMsg(e));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -48,15 +53,20 @@ export function Rollback() {
   useEffect(() => {
     if (!selectedId) {
       setChanges([]);
+      setChangesLoading(false);
       return;
     }
     let cancelled = false;
+    setChangesLoading(true);
     listChanges(selectedId)
       .then((changes) => {
         if (!cancelled) setChanges(changes);
       })
       .catch((e) => {
         if (!cancelled) setError(errMsg(e));
+      })
+      .finally(() => {
+        if (!cancelled) setChangesLoading(false);
       });
     return () => {
       cancelled = true;
@@ -64,22 +74,31 @@ export function Rollback() {
   }, [selectedId]);
 
   async function onRestore() {
-    if (!selectedId) return;
+    if (!selectedId || restoring) return;
+    if (
+      !window.confirm(
+        "Restore this snapshot? Its changes will be reverted in reverse order, restoring the system to the captured state.",
+      )
+    )
+      return;
     setError(null);
     setNotice(null);
+    setRestoring(true);
     try {
       const n = await restoreSnapshot(selectedId);
       setNotice(
-        n > 0 ? `Restored ${n} change${n === 1 ? "" : "s"}.` : "No changes to roll back.",
+        n > 0 ? `Restored ${n} change${n === 1 ? "" : "s"}.` : "No reversible changes to roll back.",
       );
       await refresh();
     } catch (e) {
       setError(errMsg(e));
+    } finally {
+      setRestoring(false);
     }
   }
 
   async function onDiff() {
-    if (!diffA || !diffB) return;
+    if (!diffA || !diffB || diffA === diffB) return;
     setError(null);
     try {
       setDiff((await diffSnapshots(diffA, diffB)) as DiffEntry[]);
@@ -109,25 +128,48 @@ export function Rollback() {
       )}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <Card title="Choose a snapshot">
+        <Card
+          title="Choose a snapshot"
+          action={
+            <button
+              onClick={() => void refresh()}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
+          }
+        >
           <div className="space-y-1">
-            {snapshots.length === 0 && (
-              <p className="text-sm text-slate-500">No snapshots yet.</p>
+            {loading ? (
+              <p className="text-sm text-slate-500">Loading snapshots…</p>
+            ) : (
+              snapshots.length === 0 && (
+                <p className="text-sm text-slate-500">No snapshots yet.</p>
+              )
             )}
             {snapshots.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setSelectedId(s.id)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                className={`block w-full rounded-lg px-3 py-2 text-left transition-colors ${
                   selectedId === s.id
                     ? "bg-slate-800 text-slate-100"
                     : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
                 }`}
               >
-                <span className="truncate">{s.name}</span>
-                <Badge tone={s.status === "active" ? "emerald" : s.status === "restored" ? "violet" : "slate"}>
-                  {s.status}
-                </Badge>
+                <span className="flex w-full items-center justify-between gap-2 text-sm">
+                  <span className="truncate">{s.name}</span>
+                  <Badge tone={s.status === "active" ? "emerald" : s.status === "restored" ? "violet" : "slate"}>
+                    {s.status}
+                  </Badge>
+                </span>
+                <span className="mt-0.5 block text-[11px] text-slate-500">
+                  {new Date(s.createdAtMs).toLocaleString()}
+                  {s.status === "restored" && s.restoredAtMs
+                    ? ` · restored ${new Date(s.restoredAtMs).toLocaleString()}`
+                    : ""}
+                </span>
               </button>
             ))}
           </div>
@@ -138,15 +180,17 @@ export function Rollback() {
           action={
             <button
               onClick={onRestore}
-              disabled={!selectedId}
+              disabled={!selectedId || restoring}
               className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
             >
-              <Undo2 className="h-3.5 w-3.5" />
-              Restore
+              <Undo2 className={`h-3.5 w-3.5 ${restoring ? "animate-pulse" : ""}`} />
+              {restoring ? "Restoring…" : "Restore"}
             </button>
           }
         >
-          {changes.length === 0 ? (
+          {changesLoading ? (
+            <p className="text-sm text-slate-500">Loading changes…</p>
+          ) : changes.length === 0 ? (
             <p className="text-sm text-slate-500">
               {selectedId ? "No changes recorded for this snapshot." : "Select a snapshot to inspect."}
             </p>
@@ -201,7 +245,8 @@ export function Rollback() {
           </select>
           <button
             onClick={onDiff}
-            disabled={!diffA || !diffB}
+            disabled={!diffA || !diffB || diffA === diffB}
+            title={diffA === diffB ? "Pick two different snapshots" : undefined}
             className="flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
           >
             <ArrowLeftRight className="h-4 w-4" />
