@@ -56,7 +56,8 @@ pub struct GameProfile {
     pub network_profile: String,
     /// Lower SAFE background processes while the game runs.
     pub cleanup_bg: bool,
-    /// Reserved for NVIDIA DRS per-game profile (Phase 8 follow-up).
+    /// Optional NVIDIA DRS per-game profile: `Some("nvidia")` applies an
+    /// `Optix: <game>` driver-settings profile on apply (see `win::nvapi`).
     pub gpu_profile: Option<String>,
     /// Whether the game-mode watcher auto-applies this profile on launch.
     pub enabled: bool,
@@ -84,4 +85,7 @@ pub struct GameProfileApplyResult {
     pub boosted: Vec<PriorityChange>,
     pub lowered: Vec<PriorityChange>,
     pub affinity_applied: Vec<AffinityChange>,
+    /// Name of the NVIDIA DRS profile created for this game, when one was
+    /// applied (NVIDIA hardware + `gpu_profile: nvidia` only).
+    pub gpu_profile: Option<String>,
 }

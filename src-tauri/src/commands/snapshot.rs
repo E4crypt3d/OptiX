@@ -44,3 +44,11 @@ pub fn restore_snapshot(db: State<'_, Database>, id: String) -> Result<usize> {
 pub fn diff_snapshots(db: State<'_, Database>, a: String, b: String) -> Result<Value> {
     rollback::diff(db.inner(), &a, &b)
 }
+
+/// Create a System Restore point (`SRSetRestorePoint`) as an extra safety net
+/// before destructive operations. Fails cleanly when System Protection is
+/// disabled. Returns the restore-point sequence number when one was created.
+#[tauri::command]
+pub fn create_system_restore_point(description: String) -> Result<Option<u32>> {
+    crate::win::restorepoint::create_restore_point(&description)
+}

@@ -87,6 +87,10 @@ pub struct ProcessDetail {
     pub is_system: bool,
     /// Current priority class, or `None` when not readable (off Windows).
     pub priority: Option<String>,
+    /// GPU utilization in percent (PDH `\\GPU Engine` counters, all engines
+    /// summed), or 0 when unavailable. Windows only; rate counters make this
+    /// sample take ~120 ms.
+    pub gpu_usage_percent: f32,
 }
 
 /// Result of applying gaming mode: every priority change Optix made, kept for

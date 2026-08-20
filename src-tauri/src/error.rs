@@ -58,3 +58,13 @@ impl From<zip::result::ZipError> for OptixError {
 }
 
 pub type Result<T> = std::result::Result<T, OptixError>;
+
+impl OptixError {
+    /// Log this error (console + `logs.txt`) and return it unchanged, so
+    /// best-effort call sites can record the full failure detail without
+    /// changing control flow. The UI still receives the friendly message.
+    pub fn logged(self, context: &str) -> Self {
+        crate::logging::error(context, &self);
+        self
+    }
+}

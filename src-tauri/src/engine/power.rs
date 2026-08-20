@@ -109,10 +109,15 @@ pub fn apply_profile(db: &Database, id: &str) -> Result<PowerApplyResult> {
     )?;
 
     // On any failure, restore the previous scheme, delete the clone, and drop
-    // the (now-empty) snapshot so no half-applied state is recorded.
+    // the (now-empty) snapshot so no half-applied state is recorded. These
+    // cleanup steps are best-effort but their failures must not be hidden.
     let abort = |db: &Database, err: OptixError| -> OptixError {
-        let _ = win::power::set_active_scheme(&old_guid);
-        let _ = snapshot::delete(db, &snap.id);
+        if let Err(e) = win::power::set_active_scheme(&old_guid) {
+            crate::logging::error("power abort: restore previous scheme", &e);
+        }
+        if let Err(e) = snapshot::delete(db, &snap.id) {
+            crate::logging::error("power abort: delete snapshot", &e);
+        }
         err
     };
 
@@ -121,17 +126,24 @@ pub fn apply_profile(db: &Database, id: &str) -> Result<PowerApplyResult> {
         Err(e) => return Err(abort(db, e)),
     };
     // Best effort: name the clone so it shows up readably in Windows settings.
-    let _ = win::power::write_friendly_name(&new_guid, &format!("Optix - {}", profile.name));
+    if let Err(e) = win::power::write_friendly_name(&new_guid, &format!("Optix - {}", profile.name))
+    {
+        crate::logging::warn(&format!("power profile naming failed: {e}"));
+    }
 
     for (subgroup, setting, value) in AC_SETTINGS {
         if let Err(e) = win::power::write_ac_index(&new_guid, subgroup, setting, *value) {
-            let _ = win::power::delete_scheme(&new_guid);
+            if let Err(del) = win::power::delete_scheme(&new_guid) {
+                crate::logging::error("power abort: delete cloned scheme", &del);
+            }
             return Err(abort(db, e));
         }
     }
 
     if let Err(e) = win::power::set_active_scheme(&new_guid) {
-        let _ = win::power::delete_scheme(&new_guid);
+        if let Err(del) = win::power::delete_scheme(&new_guid) {
+            crate::logging::error("power abort: delete cloned scheme", &del);
+        }
         return Err(abort(db, e));
     }
 
@@ -139,7 +151,9 @@ pub fn apply_profile(db: &Database, id: &str) -> Result<PowerApplyResult> {
     let active = win::power::active_scheme();
     let max_state = win::power::read_ac_index(&new_guid, SUB_PROCESSOR, SET_MAX_STATE);
     if active.as_deref() != Some(new_guid.as_str()) || max_state != Some(100) {
-        let _ = win::power::delete_scheme(&new_guid);
+        if let Err(del) = win::power::delete_scheme(&new_guid) {
+            crate::logging::error("power abort: delete cloned scheme", &del);
+        }
         return Err(abort(
             db,
             OptixError::Windows("power profile verification failed; reverted".into()),

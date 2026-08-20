@@ -8,7 +8,8 @@ use crate::db::sqlite::Database;
 use crate::engine::{rollback, snapshot};
 use crate::error::{OptixError, Result};
 use crate::models::services::{
-    ServiceActionResult, ServiceInfo, StartupActionResult, StartupEntry, WSearchStatus,
+    ScheduledTask, ServiceActionResult, ServiceInfo, StartupActionResult, StartupEntry,
+    WSearchStatus,
 };
 use crate::models::snapshot::ChangeRecord;
 use crate::win;
@@ -286,6 +287,71 @@ pub fn set_wsearch(db: &Database, enabled: bool) -> Result<ServiceActionResult> 
     })
 }
 
+/// Enumerate scheduled tasks, flagging the action executable's Authenticode
+/// signature state (trusted/untrusted/unsigned) — the Phase 6 "unknown
+/// publishers" signal.
+pub fn list_scheduled_tasks() -> Vec<ScheduledTask> {
+    let mut tasks = win::tasks::list_scheduled_tasks();
+    for t in &mut tasks {
+        t.signature = task_signature(t);
+    }
+    // Non-Microsoft/system tasks first (the interesting ones).
+    tasks.sort_by(|a, b| {
+        let a_sys = a.signature == "trusted";
+        let b_sys = b.signature == "trusted";
+        a_sys.cmp(&b_sys).then_with(|| a.name.cmp(&b.name))
+    });
+    tasks
+}
+
+/// Resolve the executable from a task action and verify its signature.
+fn task_signature(task: &ScheduledTask) -> String {
+    let Some(exe) = action_executable(&task.action) else {
+        return "unavailable".to_string();
+    };
+    // Only verify files that actually exist (task may point at a removed path).
+    if !std::path::Path::new(&exe).is_file() {
+        return "unavailable".to_string();
+    }
+    match win::signature::verify_file_signature(&exe) {
+        Ok(state) => state.as_str().to_string(),
+        Err(_) => "unavailable".to_string(),
+    }
+}
+
+/// Pull the executable path out of a `schtasks` action string. Handles quoted
+/// paths, bare exes, and `cmd.exe /c "..."` wrappers. Pure parse (no disk
+/// check) so it is unit-testable; `task_signature` checks existence before
+/// verifying.
+fn action_executable(action: &str) -> Option<String> {
+    let mut s = action.trim().to_string();
+    // Strip a leading `cmd.exe /c ...` wrapper.
+    if let Some(idx) = s.to_ascii_lowercase().find("cmd.exe") {
+        if let Some(rest) = s[idx..].splitn(2, "/c").nth(1) {
+            s = rest.to_string();
+        }
+    }
+    let s = s.trim().trim_matches('"').to_string();
+    // Quoted path (possibly with trailing arguments): first quoted segment.
+    if let Some(end) = s.find('"') {
+        let p = s[..end].trim().to_string();
+        if is_exe_path(&p) {
+            return Some(p);
+        }
+    }
+    // Otherwise the first whitespace-delimited token.
+    let first = s.split_whitespace().next().unwrap_or("").trim_matches('"').to_string();
+    if is_exe_path(&first) {
+        Some(first)
+    } else {
+        None
+    }
+}
+
+fn is_exe_path(p: &str) -> bool {
+    p.to_ascii_lowercase().ends_with(".exe")
+}
+
 /// Enumerate startup applications.
 pub fn list_startup() -> Vec<StartupEntry> {
     win::startup::list_entries()
@@ -415,5 +481,27 @@ mod tests {
     fn unknown_defaults_to_unknown() {
         assert_eq!(classify(&svc("mygameservice", false, "auto")), "unknown");
         assert_eq!(classify(&svc("randomtool", false, "manual")), "unknown");
+    }
+
+    #[test]
+    fn extracts_exe_from_task_actions() {
+        // Quoted path with trailing arguments.
+        assert_eq!(
+            action_executable(r#""C:\Tools\helper.exe" --flag"#),
+            Some("C:\\Tools\\helper.exe".to_string())
+        );
+        // cmd.exe wrapper.
+        assert_eq!(
+            action_executable(r#"cmd.exe /c "C:\Tools\x.exe" arg"#),
+            Some("C:\\Tools\\x.exe".to_string())
+        );
+        // Bare token with arguments.
+        assert_eq!(
+            action_executable(r"C:\tools.exe -v"),
+            Some("C:\\tools.exe".to_string())
+        );
+        // Missing/bogus actions resolve to nothing.
+        assert_eq!(action_executable(""), None);
+        assert_eq!(action_executable("0x9"), None);
     }
 }

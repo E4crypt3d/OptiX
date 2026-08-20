@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Archive, Plus, RefreshCw, Trash2, Undo2 } from "lucide-react";
+import { Archive, HardDrive, Plus, RefreshCw, Trash2, Undo2 } from "lucide-react";
 import {
   createSnapshot,
+  createSystemRestorePoint,
   deleteSnapshot,
   listSnapshots,
   restoreSnapshot,
@@ -27,6 +28,7 @@ export function Snapshots() {
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [restorePointBusy, setRestorePointBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -77,6 +79,20 @@ export function Snapshots() {
     }
   }
 
+  async function onCreateRestorePoint() {
+    setRestorePointBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await createSystemRestorePoint("Optix manual snapshot");
+      setNotice("System Restore point created.");
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setRestorePointBusy(false);
+    }
+  }
+
   async function onDelete(s: Snapshot) {
     if (!window.confirm(`Delete snapshot "${s.name}"? This cannot be undone.`)) return;
     setBusyId(s.id);
@@ -94,11 +110,22 @@ export function Snapshots() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-xl font-semibold text-slate-100">Snapshots</h1>
-        <p className="text-sm text-slate-500">
-          Capture the state of your system before making changes.
-        </p>
+      <header className="flex items-end justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-100">Snapshots</h1>
+          <p className="text-sm text-slate-500">
+            Capture the state of your system before making changes.
+          </p>
+        </div>
+        <button
+          onClick={onCreateRestorePoint}
+          disabled={restorePointBusy}
+          title="Create a Windows System Restore point as an extra safety net (requires System Protection to be enabled)"
+          className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+        >
+          <HardDrive className={`h-4 w-4 ${restorePointBusy ? "animate-pulse" : ""}`} />
+          {restorePointBusy ? "Creating…" : "Create Restore point"}
+        </button>
       </header>
 
       {error && (

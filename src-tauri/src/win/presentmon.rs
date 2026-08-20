@@ -13,7 +13,10 @@ pub fn find_presentmon() -> Option<String> {
     let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(dir) = &exe_dir {
+        // Bundled via `bundle.resources` (lands next to the exe), the
+        // resources/ subdir, or an unpacked copy beside the exe.
         candidates.push(dir.join("PresentMon64.exe"));
+        candidates.push(dir.join("PresentMon.exe"));
         candidates.push(dir.join("resources").join("PresentMon64.exe"));
     }
     if let Ok(home) = std::env::var("PROGRAMDATA") {

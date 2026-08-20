@@ -30,11 +30,18 @@ thiserror = "2.0.20"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Security_WinTrust",
+    "Win32_Storage_FileSystem",
     "Win32_System_EventLog",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Performance",
     "Win32_System_Power",
     "Win32_System_Registry",
+    "Win32_System_Restore",
     "Win32_System_Services",
     "Win32_System_Threading",
+    "Win32_Security_Cryptography",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }

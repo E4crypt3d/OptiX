@@ -1,10 +1,10 @@
 //! Windows AppX/MSIX package management (bloatware removal).
 //!
-//! Uses the PowerShell cmdlets documented in plan.md §11 rather than the WinRT
-//! `PackageManager` COM surface: `Get-AppxPackage` / `Get-AppxProvisionedPackage`
-//! for enumeration and `Remove-AppxPackage` / `Remove-AppxProvisionedPackage`
-//! for removal. All functions are `#[cfg(windows)]`-gated with non-Windows
-//! fallbacks so the crate still builds on Linux.
+//! Uses PowerShell cmdlets (`Get-AppxPackage` / `Get-AppxProvisionedPackage`
+//! for enumeration, `Remove-AppxPackage` / `Remove-AppxProvisionedPackage`
+//! for removal) rather than the WinRT `PackageManager` COM surface. All
+//! functions are `#[cfg(windows)]`-gated with non-Windows fallbacks so the
+//! crate still builds on Linux.
 
 use serde::Deserialize;
 

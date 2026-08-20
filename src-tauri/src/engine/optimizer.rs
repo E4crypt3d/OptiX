@@ -73,21 +73,27 @@ pub fn apply(
         if current == target {
             return;
         }
-        if win::process::set_priority(pid, target).is_ok() {
-            let name = name_of(pid);
-            out.push(PriorityChange {
-                pid,
-                name: name.clone(),
-                from: current.as_str().to_string(),
-                to: target.as_str().to_string(),
-            });
-            // Remember the true original only if this pid wasn't already changed.
-            let entry = changes.entry(pid).or_insert(AppliedChange {
-                pid,
-                original: current,
-                current: target,
-            });
-            entry.current = target;
+        match win::process::set_priority(pid, target) {
+            Ok(()) => {
+                let name = name_of(pid);
+                out.push(PriorityChange {
+                    pid,
+                    name: name.clone(),
+                    from: current.as_str().to_string(),
+                    to: target.as_str().to_string(),
+                });
+                // Remember the true original only if this pid wasn't already changed.
+                let entry = changes.entry(pid).or_insert(AppliedChange {
+                    pid,
+                    original: current,
+                    current: target,
+                });
+                entry.current = target;
+            }
+            Err(e) => crate::logging::warn(&format!(
+                "set priority for pid {pid} to {} failed: {e}",
+                target.as_str()
+            )),
         }
     };
 
@@ -115,10 +121,15 @@ pub fn restore(state: &OptimizerState) -> usize {
     let mut restored = 0;
     for change in changes {
         // Skip if the process already exited (get_priority returns None).
-        if win::process::get_priority(change.pid).is_some()
-            && win::process::set_priority(change.pid, change.original).is_ok()
-        {
-            restored += 1;
+        let Some(_) = win::process::get_priority(change.pid) else {
+            continue;
+        };
+        match win::process::set_priority(change.pid, change.original) {
+            Ok(()) => restored += 1,
+            Err(e) => crate::logging::warn(&format!(
+                "restore priority for pid {} failed: {e}",
+                change.pid
+            )),
         }
     }
     restored

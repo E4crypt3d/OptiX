@@ -97,6 +97,22 @@ const CATEGORIES: &[CategoryDef] = &[
         expected_rebuild: false,
         policy: Policy::OlderThanDays(30),
     },
+    CategoryDef {
+        id: "update_leftovers",
+        name: "Update leftovers",
+        description: "Windows Update download cache and Delivery Optimization cache. Skipped while Windows Update is running.",
+        safety: Safety::Caution,
+        expected_rebuild: false,
+        policy: Policy::All,
+    },
+    CategoryDef {
+        id: "recycle_bin",
+        name: "Recycle Bin",
+        description: "Empties the Recycle Bin. Off by default; use Disk Cleanup semantics.",
+        safety: Safety::Caution,
+        expected_rebuild: false,
+        policy: Policy::All, // handled specially in scan/delete
+    },
 ];
 
 struct FileEntry {
@@ -110,6 +126,31 @@ pub fn scan() -> Vec<CleanupCategory> {
     CATEGORIES
         .iter()
         .map(|def| {
+            if def.id == "recycle_bin" {
+                let (bytes, items) = crate::win::cleanup::recycle_bin_size();
+                return CleanupCategory {
+                    id: def.id.to_string(),
+                    name: def.name.to_string(),
+                    description: def.description.to_string(),
+                    safety: def.safety.as_str().to_string(),
+                    size_bytes: bytes,
+                    file_count: items,
+                    expected_rebuild: def.expected_rebuild,
+                };
+            }
+            // Update leftovers are reported as empty while Windows Update is
+            // mid-run (files are locked anyway).
+            if def.id == "update_leftovers" && crate::win::cleanup::update_service_busy() {
+                return CleanupCategory {
+                    id: def.id.to_string(),
+                    name: def.name.to_string(),
+                    description: def.description.to_string(),
+                    safety: def.safety.as_str().to_string(),
+                    size_bytes: 0,
+                    file_count: 0,
+                    expected_rebuild: def.expected_rebuild,
+                };
+            }
             let entries = collect(def);
             let selected = apply_policy(&entries, def.policy);
             let size = selected.iter().map(|e| e.size).sum();
@@ -131,6 +172,31 @@ pub fn scan() -> Vec<CleanupCategory> {
 pub fn delete_categories(ids: &[String]) -> Result<Vec<CategoryOutcome>> {
     let mut outcomes = Vec::new();
     for def in CATEGORIES.iter().filter(|d| ids.iter().any(|i| i == d.id)) {
+        // Recycle Bin empties via the shell API (file deletion would corrupt
+        // the $I metadata); freed bytes = size before minus size after.
+        if def.id == "recycle_bin" {
+            let (before_bytes, before_items) = crate::win::cleanup::recycle_bin_size();
+            let mut removed = 0u64;
+            if before_items > 0 {
+                match crate::win::cleanup::empty_recycle_bin() {
+                    Ok(()) => removed = before_items,
+                    Err(e) => crate::logging::warn(&format!("recycle bin empty failed: {e}")),
+                }
+            }
+            let (after_bytes, _) = crate::win::cleanup::recycle_bin_size();
+            outcomes.push(CategoryOutcome {
+                id: def.id.to_string(),
+                before_bytes,
+                freed_bytes: before_bytes.saturating_sub(after_bytes),
+                files_removed: removed,
+                files_skipped: before_items.saturating_sub(removed),
+            });
+            continue;
+        }
+        // Never touch the Update cache while the update service is running.
+        if def.id == "update_leftovers" && crate::win::cleanup::update_service_busy() {
+            continue;
+        }
         let entries = collect(def);
         let selected = apply_policy(&entries, def.policy);
         let before_bytes = selected.iter().map(|e| e.size).sum::<u64>();
@@ -231,6 +297,9 @@ fn category_paths(id: &str) -> Vec<PathBuf> {
         "shader_cache" => shader_cache_paths(),
         "crash_dumps" => crash_dump_paths(),
         "app_logs" => app_log_paths(),
+        "update_leftovers" => update_leftover_paths(),
+        // Recycle Bin is handled by the shell API, not the file walk.
+        "recycle_bin" => Vec::new(),
         _ => Vec::new(),
     }
 }
@@ -352,6 +421,33 @@ fn crash_dump_paths() -> Vec<PathBuf> {
             let m = w.join("Minidump");
             if m.is_dir() {
                 out.push(m);
+            }
+        }
+        out
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+/// Windows Update download cache + Delivery Optimization cache (contents only;
+/// Disk-Cleanup semantics apply: skip while `wuauserv` is mid-update — both
+/// enforced by the scan/delete special cases).
+fn update_leftover_paths() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        let mut out = Vec::new();
+        if let Some(w) = windows_base() {
+            let sw = w.join(r"SoftwareDistribution\Download");
+            if sw.is_dir() {
+                out.push(sw);
+            }
+        }
+        if let Some(pd) = std::env::var_os("PROGRAMDATA") {
+            let do_cache = PathBuf::from(&pd).join(r"Microsoft\Windows\DeliveryOptimization\Cache");
+            if do_cache.is_dir() {
+                out.push(do_cache);
             }
         }
         out

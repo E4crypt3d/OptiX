@@ -239,6 +239,7 @@ export function Processes() {
                 <th className="py-2 pr-2 font-medium">Background</th>
                 <th className="py-2 pr-2 font-medium">Process</th>
                 <th className="py-2 pr-2 text-right font-medium">CPU</th>
+                <th className="py-2 pr-2 text-right font-medium">GPU</th>
                 <th className="py-2 pr-2 text-right font-medium">RAM</th>
                 <th className="py-2 pr-2 text-right font-medium">Disk read</th>
                 <th className="py-2 pr-2 font-medium">Priority</th>
@@ -285,6 +286,9 @@ export function Processes() {
                   </td>
                   <td className="py-2 pr-2 text-right tabular-nums text-slate-300">
                     {p.cpuUsagePercent.toFixed(1)}%
+                  </td>
+                  <td className="py-2 pr-2 text-right tabular-nums text-slate-300">
+                    {p.gpuUsagePercent > 0 ? `${p.gpuUsagePercent.toFixed(1)}%` : "—"}
                   </td>
                   <td className="py-2 pr-2 text-right tabular-nums text-slate-300">
                     {formatBytes(p.memoryBytes)}

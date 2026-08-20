@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bug, FileArchive, RefreshCw } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { generateCrashReport, scanCrashes } from "../lib/api";
 import type { CrashReport } from "../lib/types";
 import { errMsg } from "../lib/errors";
@@ -43,6 +44,27 @@ export function CrashReports() {
 
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  // Live crash watch: the backend emits `optix://crash-detected` when new
+  // Application event-log crashes appear; refresh the timeline so a crash
+  // during a gaming session shows up without a manual scan.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void listen<unknown[]>("optix://crash-detected", async () => {
+      if (disposed) return;
+      setNotice("New crash detected — refreshing.");
+      await refresh();
+      setNotice(null);
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [refresh]);
 
   const perApp = useMemo(() => {

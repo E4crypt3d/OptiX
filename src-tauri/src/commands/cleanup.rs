@@ -23,6 +23,13 @@ pub async fn run_cleanup(db: State<'_, Database>, ids: Vec<String>) -> Result<Cl
         Some(&format!("cleanup: {}", ids.join(", "))),
     )?;
 
+    // Extra safety net before destructive deletion: a System Restore point,
+    // best-effort (fails cleanly when System Protection is disabled). Failures
+    // are logged, never hidden — cleanup still proceeds.
+    if let Err(e) = crate::win::restorepoint::create_restore_point("Optix cleanup") {
+        crate::logging::warn(&format!("system restore point skipped: {e}"));
+    }
+
     let outcomes = tauri::async_runtime::spawn_blocking(move || cleanup::delete_categories(&ids))
         .await
         .map_err(|e| OptixError::Other(e.to_string()))??;
@@ -65,4 +72,43 @@ pub async fn run_cleanup(db: State<'_, Database>, ids: Vec<String>) -> Result<Cl
     }
 
     Ok(result)
+}
+
+/// Run DISM WinSxS component cleanup (`/startcomponentcleanup` — never
+/// `resetbase`). Admin required; streamed output returned for the UI.
+#[tauri::command]
+pub async fn dism_component_cleanup(db: State<'_, Database>) -> Result<String> {
+    let snapshot = snapshot::create_lightweight(
+        db.inner(),
+        "DISM component cleanup",
+        Some("WinSxS component store cleanup"),
+    )?;
+    rollback::record_change(
+        db.inner(),
+        &snapshot.id,
+        ChangeRecord {
+            id: None,
+            snapshot_id: String::new(),
+            domain: "file".into(),
+            location: "winsxs:component_cleanup".into(),
+            kind: "replace".into(),
+            old_value: None,
+            new_value: None,
+            old_json: None,
+            new_json: None,
+            applied_at_ms: None,
+            verified: true,
+            rolled_back: false,
+        },
+    )?;
+
+    if let Err(e) = crate::win::restorepoint::create_restore_point("Optix DISM component cleanup")
+    {
+        crate::logging::warn(&format!("system restore point skipped: {e}"));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::win::cleanup::run_dism_component_cleanup(&mut |_| {})
+    })
+    .await
+    .map_err(|e| OptixError::Other(e.to_string()))?
 }

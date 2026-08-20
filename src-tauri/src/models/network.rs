@@ -71,3 +71,45 @@ pub struct DnsApplyResult {
     pub snapshot_id: String,
     pub changes: usize,
 }
+
+/// A TCP/IP tweak Optix can apply/undo (registry DWORD under
+/// `...\Services\Tcpip\Parameters`). All experimental — on modern Windows the
+/// measured impact is usually marginal.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TcpTweak {
+    /// Registry value name (e.g. `TcpAckFrequency`).
+    pub name: String,
+    pub description: String,
+    /// The recommended Optix value.
+    pub recommended: u32,
+    /// Current value, or `None` when absent (driver default applies).
+    pub current: Option<u32>,
+    /// Whether the current value equals the recommended one.
+    pub applied: bool,
+}
+
+/// Result of applying or resetting TCP tweaks.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TcpTweakResult {
+    pub snapshot_id: String,
+    pub changes: usize,
+}
+
+/// Summary of an ICMP ping test (median/jitter computed from all replies).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PingResult {
+    pub host: String,
+    pub sent: u32,
+    pub received: usize,
+    pub loss_percent: f64,
+    pub min_ms: Option<f64>,
+    pub median_ms: Option<f64>,
+    pub max_ms: Option<f64>,
+    /// Mean absolute deviation between consecutive RTTs — the "jitter".
+    pub jitter_ms: Option<f64>,
+    /// Every RTT in milliseconds, so the UI can render the series.
+    pub samples_ms: Vec<f64>,
+}

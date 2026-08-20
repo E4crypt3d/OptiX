@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Trash2 } from "lucide-react";
-import { runCleanup, scanCleanup } from "../lib/api";
+import { Cpu, RefreshCw, Trash2 } from "lucide-react";
+import { dismComponentCleanup, runCleanup, scanCleanup } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { CleanupCategory, CleanupResult } from "../lib/types";
 import { errMsg } from "../lib/errors";
@@ -13,6 +13,8 @@ export function Cleanup() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CleanupResult | null>(null);
+  const [dismRunning, setDismRunning] = useState(false);
+  const [dismOutput, setDismOutput] = useState<string | null>(null);
 
   const rescan = useCallback(async () => {
     setLoading(true);
@@ -143,6 +145,47 @@ export function Cleanup() {
           {running ? "Cleaning…" : "Clean selected"}
         </button>
       </div>
+
+      <Card title="WinSxS component store (DISM)">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-slate-400">
+            <p>
+              Run{" "}
+              <span className="font-mono text-slate-200">
+                dism /online /cleanup-image /startcomponentcleanup
+              </span>{" "}
+              to reclaim space from the Windows component store. Microsoft-sanctioned; requires
+              administrator. A snapshot and a System Restore point are created first.{" "}
+              <span className="text-slate-500">Never uses `resetbase`.</span>
+            </p>
+          </div>
+          <button
+            onClick={async () => {
+              if (!window.confirm("Run DISM component cleanup? It can take several minutes.")) return;
+              setDismRunning(true);
+              setError(null);
+              setDismOutput(null);
+              try {
+                setDismOutput(await dismComponentCleanup());
+              } catch (e) {
+                setError(errMsg(e));
+              } finally {
+                setDismRunning(false);
+              }
+            }}
+            disabled={dismRunning}
+            className="flex shrink-0 items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+          >
+            <Cpu className={`h-4 w-4 ${dismRunning ? "animate-pulse" : ""}`} />
+            {dismRunning ? "Running DISM…" : "Run DISM cleanup"}
+          </button>
+        </div>
+        {dismOutput && (
+          <pre className="mt-3 max-h-48 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-400">
+            {dismOutput.trim() || "DISM completed without output."}
+          </pre>
+        )}
+      </Card>
     </div>
   );
 }

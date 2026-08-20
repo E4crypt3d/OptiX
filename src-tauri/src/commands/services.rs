@@ -4,7 +4,8 @@ use crate::db::sqlite::Database;
 use crate::engine::services;
 use crate::error::Result;
 use crate::models::services::{
-    ServiceActionResult, ServiceInfo, StartupActionResult, StartupEntry, WSearchStatus,
+    ScheduledTask, ServiceActionResult, ServiceInfo, StartupActionResult, StartupEntry,
+    WSearchStatus,
 };
 
 /// Enumerate services with classification applied.
@@ -47,6 +48,14 @@ pub fn get_wsearch() -> WSearchStatus {
 #[tauri::command]
 pub fn set_wsearch(db: State<'_, Database>, enabled: bool) -> Result<ServiceActionResult> {
     services::set_wsearch(db.inner(), enabled)
+}
+
+/// Enumerate scheduled tasks with Authenticode signature verification.
+#[tauri::command]
+pub async fn list_scheduled_tasks() -> Result<Vec<ScheduledTask>> {
+    tauri::async_runtime::spawn_blocking(services::list_scheduled_tasks)
+        .await
+        .map_err(|e| crate::error::OptixError::Other(e.to_string()))
 }
 
 /// Enumerate startup applications.

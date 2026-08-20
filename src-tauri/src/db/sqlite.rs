@@ -155,6 +155,11 @@ fn migrate(conn: &Connection) -> Result<()> {
     // `CREATE TABLE IF NOT EXISTS`, so backfill every nullable column
     // explicitly (idempotent — no-op when already present).
     ensure_columns(conn)?;
+    // The earliest `snapshots` table used an INTEGER autoincrement `id` with
+    // NOT NULL `path`/`created_at_ms` and a `description` column; `CREATE TABLE
+    // IF NOT EXISTS` cannot alter it and `ensure_columns` only appends nullable
+    // columns, so rebuild it to the current schema.
+    migrate_snapshots_table(conn)?;
     conn.pragma_update(None, "user_version", 1)?;
     Ok(())
 }
@@ -245,18 +250,54 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Whether `table` declares `column`.
+fn table_has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    Ok(names.iter().any(|name| name == column))
+}
+
 /// Add `table.column` with the given type when it does not already exist.
 fn ensure_column(conn: &Connection, table: &str, column: &str, decl: &str) -> Result<()> {
-    let exists = {
-        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
-        let names = stmt
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<rusqlite::Result<Vec<String>>>()?;
-        names.iter().any(|name| name == column)
-    };
-    if !exists {
+    if !table_has_column(conn, table, column)? {
         conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"), [])?;
     }
+    Ok(())
+}
+
+/// Rebuild a legacy `snapshots` table that the current schema cannot use.
+///
+/// The earliest Optix schema defined `snapshots` as `id INTEGER PRIMARY KEY
+/// AUTOINCREMENT` with NOT NULL `path`/`created_at_ms` and a `description`
+/// column. `migrate`'s `SCHEMA_V1`/`ensure_columns` cannot re-type an existing
+/// table, so the current insert (a UUID string `id`) hit SQLite `datatype
+/// mismatch`. Recreate the table in the current shape, mapping `description` /
+/// `created_at_ms` onto `reason` / `created_at` (and stringifying the integer
+/// `id` so any pre-existing `changes` FK references stay valid).
+fn migrate_snapshots_table(conn: &Connection) -> Result<()> {
+    if !table_has_column(conn, "snapshots", "path")? {
+        return Ok(()); // already the current schema.
+    }
+    conn.execute_batch(
+        "PRAGMA foreign_keys = OFF;
+         CREATE TABLE snapshots_new (
+             id          TEXT PRIMARY KEY,
+             name        TEXT,
+             reason      TEXT,
+             created_at  INTEGER,
+             restored_at INTEGER,
+             status      TEXT
+         );
+         INSERT INTO snapshots_new (id, name, reason, created_at, restored_at, status)
+             SELECT CAST(id AS TEXT), name, COALESCE(description, reason),
+                    created_at_ms, restored_at, status
+             FROM snapshots;
+         DROP TABLE snapshots;
+         ALTER TABLE snapshots_new RENAME TO snapshots;
+         PRAGMA foreign_keys = ON;",
+    )?;
     Ok(())
 }
 
@@ -800,6 +841,60 @@ mod tests {
         assert!(db.list_snapshots().unwrap().is_empty());
         // CASCADE removes the change row too.
         assert!(db.list_changes("abc").unwrap().is_empty());
+    }
+
+    #[test]
+    fn migrates_legacy_snapshots_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE snapshots (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 name TEXT NOT NULL,
+                 description TEXT,
+                 path TEXT NOT NULL,
+                 created_at_ms INTEGER NOT NULL
+             );
+             INSERT INTO snapshots (name, description, path, created_at_ms)
+                 VALUES ('legacy', 'backup', 'C:/backup', 111);
+             CREATE TABLE changes (
+                 id INTEGER PRIMARY KEY,
+                 snapshot_id TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE
+             );
+             INSERT INTO changes (snapshot_id) VALUES ('1');",
+        )
+            .unwrap();
+        migrate(&conn).unwrap();
+
+        // The legacy row survives and `created_at_ms` maps onto `created_at`.
+        let row = conn
+            .query_row(
+                "SELECT id, name, reason, created_at FROM snapshots WHERE name = 'legacy'",
+                [],
+                |row| {
+                    let id: String = row.get(0)?;
+                    let name: String = row.get(1)?;
+                    let reason: Option<String> = row.get(2)?;
+                    let created: i64 = row.get(3)?;
+                    Ok((id, name, reason, created))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            ("1".to_string(), "legacy".to_string(), Some("backup".to_string()), 111)
+        );
+
+        // The current insert path (a UUID string id) must not hit a datatype mismatch.
+        conn.execute(
+            "INSERT INTO snapshots (id, name, reason, created_at, restored_at, status)
+             VALUES ('uuid-1', 'new', NULL, 222, NULL, 'active')",
+            [],
+        )
+            .unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM snapshots", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
     }
 
     #[test]

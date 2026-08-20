@@ -1,7 +1,7 @@
 //! Bloatware (AppX/MSIX) engine: classify installed packages against a
-//! hard-coded allowlist/removal list (plan.md §11) and orchestrate removal.
-//! Only ever *suggests* — the user confirms every package, and removal is
-//! snapshot-first (the command layer records each change).
+//! hard-coded allowlist/removal list and orchestrate removal. Only ever
+//! *suggests* — the user confirms every package, and removal is snapshot-first
+//! (the command layer records each change).
 
 use crate::models::bloatware::AppxPackage;
 use crate::win::appx;

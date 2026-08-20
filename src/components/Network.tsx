@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Gauge, Globe, RefreshCw, Zap } from "lucide-react";
+import { Activity, Gauge, Globe, RefreshCw, RotateCcw, Zap } from "lucide-react";
 import {
   applyDns,
+  applyTcpTweaks,
   benchmarkDns,
+  listTcpTweaks,
   networkStatus,
-  tcpParameters,
+  pingTest,
+  resetTcpTweaks,
 } from "../lib/api";
 import type {
   DnsBenchmarkResult,
   DnsServer,
   NetworkStatus,
-  TcpParameter,
+  PingResult,
+  TcpTweak,
 } from "../lib/types";
 import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
@@ -22,11 +26,15 @@ function ms(v: number | null): string {
 export function Network() {
   const [status, setStatus] = useState<NetworkStatus | null>(null);
   const [results, setResults] = useState<DnsBenchmarkResult[] | null>(null);
-  const [tcp, setTcp] = useState<TcpParameter[]>([]);
+  const [tweaks, setTweaks] = useState<TcpTweak[]>([]);
   const [adapter, setAdapter] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [applying, setApplying] = useState<string | null>(null);
+  const [tweakBusy, setTweakBusy] = useState(false);
+  const [pingHost, setPingHost] = useState("");
+  const [pinging, setPinging] = useState(false);
+  const [ping, setPing] = useState<PingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -34,9 +42,9 @@ export function Network() {
     setLoading(true);
     setError(null);
     try {
-      const [s, t] = await Promise.all([networkStatus(), tcpParameters()]);
+      const [s, t] = await Promise.all([networkStatus(), listTcpTweaks()]);
       setStatus(s);
-      setTcp(t);
+      setTweaks(t);
       setAdapter((prev) => {
         if (prev && s.adapters.some((a) => a.guid === prev)) return prev;
         const active = s.adapters.find((a) => a.isActive) ?? s.adapters[0];
@@ -86,6 +94,62 @@ export function Network() {
       setError(errMsg(e));
     } finally {
       setApplying(null);
+    }
+  }
+
+  async function onPing() {
+    const host = pingHost.trim();
+    if (!host) {
+      setError("Enter a host to ping (IP or hostname).");
+      return;
+    }
+    setPinging(true);
+    setError(null);
+    setPing(null);
+    try {
+      setPing(await pingTest(host, 8));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setPinging(false);
+    }
+  }
+
+  async function onApplyTweaks() {
+    if (!window.confirm("Apply the experimental TCP/IP tweaks? A snapshot is created first and every change is reversible.")) return;
+    setTweakBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const r = await applyTcpTweaks();
+      setNotice(
+        r.changes > 0
+          ? `Applied ${r.changes} TCP tweaks (snapshot ${r.snapshotId.slice(0, 8)}…).`
+          : "TCP tweaks were already applied.",
+      );
+      setTweaks(await listTcpTweaks());
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setTweakBusy(false);
+    }
+  }
+
+  async function onResetTweaks() {
+    if (!window.confirm("Revert all TCP/IP tweaks to driver defaults?")) return;
+    setTweakBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const r = await resetTcpTweaks();
+      setNotice(
+        r.changes > 0 ? `Reverted ${r.changes} TCP tweaks.` : "No tweaks to revert.",
+      );
+      setTweaks(await listTcpTweaks());
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setTweakBusy(false);
     }
   }
 
@@ -215,26 +279,111 @@ export function Network() {
         )}
       </Card>
 
-      <Card title="TCP/IP Parameters (experimental)">
-        {tcp.length === 0 ? (
+      <Card title="Ping test">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <input
+            value={pingHost}
+            onChange={(e) => setPingHost(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void onPing()}
+            placeholder="gateway, game server, or 1.1.1.1"
+            className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
+          />
+          <button
+            onClick={onPing}
+            disabled={pinging}
+            className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+          >
+            <Activity className="h-4 w-4" />
+            {pinging ? "Pinging…" : "Ping"}
+          </button>
+        </div>
+        {ping && (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <div>
+              <div className="text-xs uppercase tracking-wider text-slate-500">Median</div>
+              <div className="mt-0.5 text-lg font-semibold text-slate-100">{ms(ping.medianMs)}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-slate-500">Jitter</div>
+              <div className="mt-0.5 text-lg font-semibold text-slate-100">{ms(ping.jitterMs)}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-slate-500">Min / Max</div>
+              <div className="mt-0.5 text-sm text-slate-200">
+                {ms(ping.minMs)} / {ms(ping.maxMs)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-slate-500">Loss</div>
+              <div className="mt-0.5 text-lg font-semibold text-slate-100">
+                {ping.lossPercent.toFixed(0)}%
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-slate-500">Replies</div>
+              <div className="mt-0.5 text-lg font-semibold text-slate-100">
+                {ping.received}/{ping.sent}
+              </div>
+            </div>
+          </div>
+        )}
+        <p className="mt-3 text-xs text-slate-600">
+          ICMP round-trip time and jitter — the honest in-game connection signal (unlike DNS,
+          which only affects lookups).
+        </p>
+      </Card>
+
+      <Card
+        title="TCP/IP Tweaks (experimental)"
+        action={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onApplyTweaks}
+              disabled={tweakBusy}
+              className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+            >
+              <Zap className="h-3.5 w-3.5" />
+              Apply recommended
+            </button>
+            <button
+              onClick={onResetTweaks}
+              disabled={tweakBusy}
+              className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Revert to defaults
+            </button>
+          </div>
+        }
+      >
+        {tweaks.length === 0 ? (
           <p className="text-sm text-slate-500">
             No TCP parameters exposed (Windows-only).
           </p>
         ) : (
           <ul className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
-            {tcp.map((p) => (
-              <li key={p.name} className="flex items-center justify-between">
-                <span className="font-mono text-sm text-slate-400">{p.name}</span>
-                <span className="tabular-nums text-sm text-slate-200">
-                  {p.value === null ? "default" : p.value}
+            {tweaks.map((t) => (
+              <li key={t.name} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="font-mono text-sm text-slate-400">{t.name}</span>
+                  <p className="truncate text-xs text-slate-600" title={t.description}>
+                    {t.description}
+                  </p>
+                </div>
+                <span className="flex shrink-0 items-center gap-2">
+                  {t.applied && <Badge tone="emerald">applied</Badge>}
+                  <span className="tabular-nums text-sm text-slate-200">
+                    {t.current === null ? "default" : t.current}
+                  </span>
                 </span>
               </li>
             ))}
           </ul>
         )}
         <p className="mt-3 text-xs text-slate-600">
-          These legacy tweaks are mostly placebo on modern Windows — real wins come from DNS
-          selection and a wired connection. Read-only for now.
+          These legacy registry tweaks are mostly placebo on modern Windows — real wins come
+          from DNS selection and a wired connection. Everything here is snapshot-first and
+          revertible in one click.
         </p>
       </Card>
     </div>

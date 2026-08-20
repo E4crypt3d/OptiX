@@ -206,10 +206,30 @@ pub fn tcp_parameters() -> Vec<TcpParameter> {
     Vec::new()
 }
 
+/// Read a single TCP/IP parameter DWORD from the registry (`None` when absent
+/// or non-numeric, meaning the driver default applies).
+#[cfg(windows)]
+pub fn tcp_value(name: &str) -> Option<u32> {
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    use winreg::RegKey;
+    RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters")
+        .ok()?
+        .get_value::<u32, _>(name)
+        .ok()
+}
+
+#[cfg(not(windows))]
+pub fn tcp_value(_name: &str) -> Option<u32> {
+    None
+}
+
 /// Flush the DNS resolver cache (best-effort; no-op off Windows).
 #[cfg(windows)]
 pub fn flush_dns() {
-    let _ = std::process::Command::new("ipconfig").arg("/flushdns").output();
+    if let Err(e) = std::process::Command::new("ipconfig").arg("/flushdns").output() {
+        crate::logging::warn(&format!("ipconfig /flushdns failed: {e}"));
+    }
 }
 
 #[cfg(not(windows))]

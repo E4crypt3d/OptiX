@@ -172,6 +172,7 @@ export function Games() {
       if (r.boosted.length) parts.push(`${r.boosted.length} boosted`);
       if (r.lowered.length) parts.push(`${r.lowered.length} background lowered`);
       if (r.affinityApplied.length) parts.push("affinity set");
+      if (r.gpuProfile) parts.push(`NVIDIA profile "${r.gpuProfile}"`);
       setNotice(
         parts.length
           ? `Applied profile: ${parts.join(", ")}.`

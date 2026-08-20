@@ -47,9 +47,20 @@ fn list_processes_blocking() -> Result<Vec<ProcessDetail>> {
                 classification: class.as_str().to_string(),
                 is_system,
                 priority,
+                gpu_usage_percent: 0.0,
             }
         })
         .collect();
+
+    // Per-process GPU utilization from PDH (Windows; empty elsewhere). Sums all
+    // GPU engines per PID, matching what Task Manager reports.
+    let gpu: std::collections::HashMap<u32, f32> =
+        crate::win::pdh::per_process_gpu_usage().into_iter().collect();
+    for detail in &mut out {
+        if let Some(&usage) = gpu.get(&detail.pid) {
+            detail.gpu_usage_percent = usage;
+        }
+    }
 
     // Highest resource consumers first.
     out.sort_by(|a, b| {

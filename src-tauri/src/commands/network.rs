@@ -4,7 +4,8 @@ use crate::db::sqlite::Database;
 use crate::engine::network;
 use crate::error::{OptixError, Result};
 use crate::models::network::{
-    DnsApplyResult, DnsBenchmarkResult, DnsServer, NetworkStatus, TcpParameter,
+    DnsApplyResult, DnsBenchmarkResult, DnsServer, NetworkStatus, PingResult, TcpParameter,
+    TcpTweak, TcpTweakResult,
 };
 use crate::win;
 
@@ -82,4 +83,30 @@ pub fn apply_dns(
 #[tauri::command]
 pub fn tcp_parameters() -> Vec<TcpParameter> {
     win::network::tcp_parameters()
+}
+
+/// The tunable TCP/IP tweaks with current vs recommended state.
+#[tauri::command]
+pub fn list_tcp_tweaks() -> Vec<TcpTweak> {
+    network::tcp_tweaks()
+}
+
+/// Apply the recommended TCP/IP tweaks (snapshot-first, reversible).
+#[tauri::command]
+pub fn apply_tcp_tweaks(db: State<'_, Database>) -> Result<TcpTweakResult> {
+    network::apply_tcp_tweaks(db.inner())
+}
+
+/// One-click revert of all TCP/IP tweaks to driver defaults.
+#[tauri::command]
+pub fn reset_tcp_tweaks(db: State<'_, Database>) -> Result<TcpTweakResult> {
+    network::reset_tcp_tweaks(db.inner())
+}
+
+/// ICMP ping test (Windows `IcmpSendEcho`; `ping` subprocess on Linux dev).
+#[tauri::command]
+pub async fn ping_test(host: String, count: u32) -> Result<PingResult> {
+    tauri::async_runtime::spawn_blocking(move || network::ping_test(&host, count))
+        .await
+        .map_err(|e| OptixError::Other(e.to_string()))?
 }

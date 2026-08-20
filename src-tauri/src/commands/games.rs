@@ -115,13 +115,43 @@ pub fn apply_game_profile(
     };
 
     let outcome = watcher.apply_game(&game, &profile);
+
+    // NVIDIA DRS per-game profile (best-effort: only on NVIDIA hardware with
+    // `gpu_profile: nvidia`; failures surface in the UI, never fail the apply).
+    let gpu_profile = if profile.gpu_profile.as_deref() == Some("nvidia") {
+        let opts = crate::win::nvapi::DrsOptions {
+            prefer_max_performance: profile.power_profile != "none",
+            shader_cache_on: true,
+        };
+        let exe = (!game.executable.is_empty()).then(|| game.executable.as_str());
+        match crate::win::nvapi::apply_profile(&game.name, exe, &opts) {
+            Ok(r) => Some(r.profile),
+            Err(e) => {
+                // Best-effort for end users (e.g. no NVIDIA driver), but the
+                // real failure is logged so developers see it.
+                crate::logging::warn(&format!("NVIDIA DRS profile for {} not applied: {e}", game.name));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     Ok(GameProfileApplyResult {
         snapshot_id,
         power_applied,
         boosted: outcome.boosted,
         lowered: outcome.lowered,
         affinity_applied: outcome.affinity,
+        gpu_profile,
     })
+}
+
+/// Remove the NVIDIA DRS profile Optix created for a game (the rollback path
+/// for the per-game GPU profile).
+#[tauri::command]
+pub fn remove_game_drs_profile(game_name: String) -> Result<()> {
+    crate::win::nvapi::remove_profile(&game_name)
 }
 
 /// Force-restore a game's boosted processes (usually automatic on exit).

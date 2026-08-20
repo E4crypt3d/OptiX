@@ -460,6 +460,60 @@ fn sanitize_filename(name: &str) -> String {
         .collect()
 }
 
+/// Serialize a minimal crash summary for the live crash-watch event.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CrashAlert {
+    pub detected_at_ms: i64,
+    pub app: String,
+    pub pid: Option<i64>,
+    pub event_id: Option<i64>,
+    pub module: String,
+    pub exception_code: String,
+}
+
+/// Spawn a background thread that polls the Application event log for crash
+/// events every `interval` seconds and emits `optix://crash-detected` when new
+/// crashes appear. The frontend subscribes to that event to refresh the Crash
+/// Reports page live. Best-effort: event-log reads are cheap and the thread
+/// simply sleeps through failures.
+pub fn spawn_crash_watch(app: tauri::AppHandle, interval_secs: u64) {
+    use tauri::Emitter;
+
+    std::thread::spawn(move || {
+        let interval = std::time::Duration::from_secs(interval_secs.max(5));
+        let mut last_seen: i64 = 0;
+        let mut first = true;
+        loop {
+            let events = win::crash::query_application_events(50);
+            let newest = events.iter().map(|e| e.detected_at_ms).max().unwrap_or(0);
+            if !events.is_empty() && (first || newest > last_seen) {
+                // Only alert on the newly-observed events.
+                let alerts: Vec<CrashAlert> = events
+                    .iter()
+                    .filter(|e| first || e.detected_at_ms > last_seen)
+                    .map(|e| CrashAlert {
+                        detected_at_ms: e.detected_at_ms,
+                        app: e.app.clone(),
+                        pid: e.pid,
+                        event_id: Some(e.event_id),
+                        module: e.module.clone(),
+                        exception_code: e.exception_code.clone(),
+                    })
+                    .collect();
+                if !alerts.is_empty() {
+                    if let Err(e) = app.emit("optix://crash-detected", &alerts) {
+                        crate::logging::warn(&format!("crash event emit failed: {e}"));
+                    }
+                }
+            }
+            first = false;
+            last_seen = newest;
+            std::thread::sleep(interval);
+        }
+    });
+}
+
 /// Generate a `CrashReport.zip` for a crash, returning the zip path.
 pub fn generate_report_zip(crash: &CrashReport) -> Result<String> {
     generate_report_zip_to(crash, &data_dir().join("CrashReports"))

@@ -57,6 +57,25 @@ pub struct StartupActionResult {
     pub changes: usize,
 }
 
+/// A scheduled task enumerated from `schtasks /query /fo CSV /v`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledTask {
+    pub name: String,
+    /// "Ready" | "Running" | "Disabled" | …
+    pub status: String,
+    pub next_run: String,
+    pub last_run: String,
+    /// Task author (often empty — signatures come from the action path).
+    pub author: String,
+    /// Command the task runs (`Task To Run` column).
+    pub action: String,
+    pub run_as: String,
+    /// Authenticode state of the action executable, when one is resolvable:
+    /// "trusted" | "untrusted" | "unsigned" | "unavailable".
+    pub signature: String,
+}
+
 /// Status of the Windows Search (WSearch) service.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

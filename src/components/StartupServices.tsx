@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Play, RefreshCw, Search, Square } from "lucide-react";
 import {
   getWsearch,
+  listScheduledTasks,
   listServices,
   listStartup,
   setServiceStartType,
@@ -11,6 +12,7 @@ import {
   stopService,
 } from "../lib/api";
 import type {
+  ScheduledTask,
   ServiceClass,
   ServiceInfo,
   StartupEntry,
@@ -38,9 +40,23 @@ function stateTone(state: string): "emerald" | "slate" | "amber" {
   return "amber";
 }
 
+function signatureTone(sig: string): "rose" | "emerald" | "slate" | "amber" {
+  switch (sig) {
+    case "trusted":
+      return "emerald";
+    case "untrusted":
+      return "amber";
+    case "unsigned":
+      return "rose";
+    default:
+      return "slate";
+  }
+}
+
 export function StartupServices() {
   const [services, setServices] = useState<ServiceInfo[]>([]);
   const [startup, setStartup] = useState<StartupEntry[]>([]);
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [wsearch, setWsearchStatus] = useState<WSearchStatus | null>(null);
   const [query, setQuery] = useState("");
   const [classFilter, setClassFilter] = useState<ClassFilter>("all");
@@ -53,13 +69,15 @@ export function StartupServices() {
     setLoading(true);
     setError(null);
     try {
-      const [s, st, w] = await Promise.all([
+      const [s, st, t, w] = await Promise.all([
         listServices(),
         listStartup(),
+        listScheduledTasks(),
         getWsearch(),
       ]);
       setServices(s);
       setStartup(st);
+      setTasks(t);
       setWsearchStatus(w);
     } catch (e) {
       setError(errMsg(e));
@@ -194,6 +212,45 @@ export function StartupServices() {
             </button>
           </div>
         )}
+      </Card>
+
+      <Card title={`Scheduled Tasks (${tasks.length})`}>
+        {tasks.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No scheduled tasks found (Windows-only enumeration).
+          </p>
+        ) : (
+          <ul className="max-h-72 divide-y divide-slate-800/60 overflow-y-auto">
+            {tasks.map((t) => (
+              <li key={t.name} className="flex items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-medium text-slate-200">
+                      {t.name.replace(/^\\+/, "")}
+                    </span>
+                    <Badge tone={signatureTone(t.signature)}>{t.signature}</Badge>
+                    {t.runAs && <Badge tone="violet">{t.runAs}</Badge>}
+                  </div>
+                  <div className="truncate text-xs text-slate-500">
+                    {t.action ? (
+                      <span className="font-mono">{t.action}</span>
+                    ) : (
+                      <span>No action path exposed.</span>
+                    )}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right text-xs text-slate-500">
+                  {t.nextRun && <div>next: {t.nextRun}</div>}
+                  {t.author && <div>author: {t.author}</div>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-3 text-xs text-slate-600">
+          Tasks are read-only. The badge is the Authenticode signature state of the action
+          executable — unsigned or untrusted publishers are worth a closer look.
+        </p>
       </Card>
 
       <Card title="Startup Apps">

@@ -5,6 +5,41 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **System Restore points**: `SRSetRestorePoint` command on the Snapshots page
+  and an automatic best-effort restore point before cleanup / DISM runs.
+- **Cleanup expansion**: SoftwareDistribution + Delivery Optimization cache
+  category (skipped while `wuauserv` is running), Recycle Bin category via
+  `SHQueryRecycleBin`/`SHEmptyRecycleBin`, and DISM WinSxS
+  `/startcomponentcleanup` with streamed output.
+- **Per-process GPU usage**: PDH `\GPU Engine` counters summed per PID, shown
+  as a GPU column in Processes (Task-Manager-style).
+- **ICMP ping test**: `IcmpSendEcho` on Windows (`ping` subprocess on Linux)
+  with median/min/max RTT, jitter, loss, and the full sample series.
+- **TCP/IP tweaks**: apply recommended values and one-click revert to driver
+  defaults, snapshot-first with per-write verification.
+- **Scheduled tasks**: `schtasks /fo CSV /v` enumeration with Authenticode
+  signature verification of each action executable.
+- **NVIDIA DRS per-game profiles**: runtime-loaded NVAPI (no SDK dependency),
+  byte-exact SDK struct layouts; applies power-mode + shader-cache settings to
+  an `Optix: <game>` profile bound to the game executable, removable as the
+  rollback path.
+- **PresentMon bundling**: `scripts/fetch-presentmon.ps1` + `bundle.resources`
+  so release builds ship the benchmark capture binary; CI fetches it before
+  packaging.
+- **Live crash-watch**: background thread polls the Application event log and
+  emits `optix://crash-detected`; the Crash Reports page refreshes live.
+- **Backend logging**: every error is written to the console and `logs.txt`
+  next to the installed executable (falling back to the data dir); panic hook
+  captures backend panics; `log_path` exposed in app info.
+
+### Fixed
+
+- Legacy-snapshot migration test (rusqlite 0.40 `query_row` closure contract).
+
 ## [0.5.0] - 2026-08-19
 
 ### Added

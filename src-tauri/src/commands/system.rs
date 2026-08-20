@@ -309,5 +309,8 @@ pub fn app_info() -> AppInfo {
         data_dir: crate::db::sqlite::data_dir().to_string_lossy().into_owned(),
         snapshots_dir: crate::db::sqlite::snapshots_dir().to_string_lossy().into_owned(),
         snapshot_retention: crate::engine::snapshot::SNAPSHOT_RETENTION,
+        log_path: crate::logging::log_path()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
     }
 }

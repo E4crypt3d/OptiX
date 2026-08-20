@@ -106,48 +106,63 @@ impl GameWatcher {
         for pid in pids {
             let name = name_of(&processes, pid);
             if let Some(cur) = win::process::get_priority(pid) {
-                if cur != target && win::process::set_priority(pid, target).is_ok() {
-                    outcome.boosted.push(PriorityChange {
-                        pid,
-                        name: name.clone(),
-                        from: cur.as_str().into(),
-                        to: target.as_str().into(),
-                    });
-                    watched.push(WatchedProcess {
-                        pid,
-                        original_priority: Some(cur),
-                        original_affinity: None,
-                    });
+                if cur != target {
+                    match win::process::set_priority(pid, target) {
+                        Ok(()) => {
+                            outcome.boosted.push(PriorityChange {
+                                pid,
+                                name: name.clone(),
+                                from: cur.as_str().into(),
+                                to: target.as_str().into(),
+                            });
+                            watched.push(WatchedProcess {
+                                pid,
+                                original_priority: Some(cur),
+                                original_affinity: None,
+                            });
+                        }
+                        Err(e) => crate::logging::warn(&format!(
+                            "boost priority for pid {pid} failed: {e}"
+                        )),
+                    }
                 }
             }
             if let Some(mask) = mask {
                 let orig = win::process::get_affinity(pid);
-                if win::process::set_affinity(pid, mask).is_ok() {
-                    outcome.affinity.push(AffinityChange {
-                        pid,
-                        name: name.clone(),
-                        from: orig,
-                        to: mask,
-                    });
-                    if let Some(w) = watched.iter_mut().find(|w| w.pid == pid) {
-                        w.original_affinity = orig;
-                    } else {
-                        watched.push(WatchedProcess {
+                match win::process::set_affinity(pid, mask) {
+                    Ok(()) => {
+                        outcome.affinity.push(AffinityChange {
                             pid,
-                            original_priority: None,
-                            original_affinity: orig,
+                            name: name.clone(),
+                            from: orig,
+                            to: mask,
                         });
+                        if let Some(w) = watched.iter_mut().find(|w| w.pid == pid) {
+                            w.original_affinity = orig;
+                        } else {
+                            watched.push(WatchedProcess {
+                                pid,
+                                original_priority: None,
+                                original_affinity: orig,
+                            });
+                        }
                     }
+                    Err(e) => crate::logging::warn(&format!(
+                        "set affinity for pid {pid} failed: {e}"
+                    )),
                 }
             }
         }
 
         for pid in background {
             if let Some(cur) = win::process::get_priority(pid) {
-                if cur != PriorityClass::BelowNormal
-                    && cur != PriorityClass::Idle
-                    && win::process::set_priority(pid, PriorityClass::BelowNormal).is_ok()
-                {
+                if cur != PriorityClass::BelowNormal && cur != PriorityClass::Idle {
+                    if let Err(e) = win::process::set_priority(pid, PriorityClass::BelowNormal) {
+                        crate::logging::warn(&format!(
+                            "lower priority for background pid {pid} failed: {e}"
+                        ));
+                        continue;
+                    }
                     let name = name_of(&processes, pid);
                     outcome.lowered.push(PriorityChange {
                         pid,

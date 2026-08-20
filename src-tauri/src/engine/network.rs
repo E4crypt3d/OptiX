@@ -215,14 +215,19 @@ pub fn apply_dns(db: &Database, guid: &str, servers: &[String]) -> Result<DnsApp
 
     win::registry::set_registry_value(&location, &new)?;
 
-    // Verify the write landed; on failure restore the previous value.
+    // Verify the write landed; on failure restore the previous value. The
+    // revert itself is best-effort, but its failure must not be hidden.
     if win::network::name_server(guid).as_deref() != Some(new.as_str()) {
         match &old {
             Some(prev) => {
-                let _ = win::registry::set_registry_value(&location, prev);
+                if let Err(e) = win::registry::set_registry_value(&location, prev) {
+                    crate::logging::error("DNS revert (restore old value)", &e);
+                }
             }
             None => {
-                let _ = win::registry::delete_registry_value(&location);
+                if let Err(e) = win::registry::delete_registry_value(&location) {
+                    crate::logging::error("DNS revert (delete value)", &e);
+                }
             }
         }
         return Err(OptixError::Windows(
@@ -253,6 +258,190 @@ pub fn apply_dns(db: &Database, guid: &str, servers: &[String]) -> Result<DnsApp
     Ok(DnsApplyResult {
         snapshot_id: snap.id,
         changes: 1,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// TCP/IP tweaks (experimental; snapshot + verify like everything else)
+// ---------------------------------------------------------------------------
+
+/// The registry-located TCP/IP tweaks Optix can tune, with the recommended
+/// value and a plain-language rationale. Research says most of these are
+/// marginal-to-placebo on modern Windows, so the UI presents them as
+/// experimental and every change is reversible.
+pub const TCP_TWEAKS: &[(&str, &str, u32)] = &[
+    ("TcpAckFrequency", "Send an ACK for every received segment (lower latency, more ACK traffic)", 1),
+    ("TCPNoDelay", "Disable Nagle's algorithm for the TCP stack (lower latency)", 1),
+    ("MaxUserPort", "Raise the ephemeral port range limit (more concurrent connections)", 65534),
+    ("TcpTimedWaitDelay", "Recycle TIME_WAIT sockets after 30 s (faster reuse under load)", 30),
+    ("DefaultTTL", "Set the IPv4 TTL to the common 64 hops", 64),
+    ("Tcp1323Opts", "Enable TCP timestamps + window scaling (throughput on long links)", 1),
+];
+
+const TCP_PARAMS_KEY: &str = r"HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters";
+
+/// Current state of every tunable tweak, ready for the UI.
+pub fn tcp_tweaks() -> Vec<crate::models::network::TcpTweak> {
+    use crate::models::network::TcpTweak;
+    TCP_TWEAKS
+        .iter()
+        .map(|(name, desc, recommended)| {
+            let current = win::network::tcp_value(name);
+            TcpTweak {
+                name: (*name).to_string(),
+                description: (*desc).to_string(),
+                recommended: *recommended,
+                current,
+                applied: current == Some(*recommended),
+            }
+        })
+        .collect()
+}
+
+/// Apply the recommended TCP tweaks (snapshot-first, verified, reversible).
+pub fn apply_tcp_tweaks(db: &Database) -> Result<crate::models::network::TcpTweakResult> {
+    use crate::models::network::TcpTweakResult;
+
+    let snap = snapshot::create_lightweight(
+        db,
+        "TCP tweaks",
+        Some("experimental TCP/IP registry tuning"),
+    )?;
+    let mut changes = 0usize;
+
+    for (name, _desc, recommended) in TCP_TWEAKS {
+        let location = format!("{TCP_PARAMS_KEY}\\{name}");
+        let old = win::network::tcp_value(name);
+        if old == Some(*recommended) {
+            continue;
+        }
+        win::registry::set_registry_value(&location, &recommended.to_string())?;
+        // Verify the write landed; on mismatch restore the previous value.
+        if win::network::tcp_value(name) != Some(*recommended) {
+            match old {
+                Some(prev) => {
+                    if let Err(e) = win::registry::set_registry_value(&location, &prev.to_string())
+                    {
+                        crate::logging::error(&format!("TCP revert (restore {name})"), &e);
+                    }
+                }
+                None => {
+                    if let Err(e) = win::registry::delete_registry_value(&location) {
+                        crate::logging::error(&format!("TCP revert (delete {name})"), &e);
+                    }
+                }
+            }
+            return Err(OptixError::Windows(format!(
+                "TCP tweak {name} verification failed; reverted"
+            )));
+        }
+        rollback::record_change(
+            db,
+            &snap.id,
+            ChangeRecord {
+                id: None,
+                snapshot_id: String::new(),
+                domain: "network".to_string(),
+                location: location.clone(),
+                kind: "set".to_string(),
+                old_value: old.map(|v| v.to_string()),
+                new_value: Some(recommended.to_string()),
+                old_json: None,
+                new_json: None,
+                applied_at_ms: None,
+                verified: true,
+                rolled_back: false,
+            },
+        )?;
+        changes += 1;
+    }
+
+    Ok(TcpTweakResult {
+        snapshot_id: snap.id,
+        changes,
+    })
+}
+
+/// One-click revert: remove every Optix-tuned value (driver defaults return),
+/// restoring any pre-existing values from the previous snapshot's change log.
+pub fn reset_tcp_tweaks(db: &Database) -> Result<crate::models::network::TcpTweakResult> {
+    use crate::models::network::TcpTweakResult;
+
+    let snap = snapshot::create_lightweight(
+        db,
+        "Reset TCP tweaks",
+        Some("revert experimental TCP/IP registry tuning"),
+    )?;
+    let mut changes = 0usize;
+
+    for (name, _desc, _recommended) in TCP_TWEAKS {
+        let location = format!("{TCP_PARAMS_KEY}\\{name}");
+        let old = win::network::tcp_value(name);
+        if old.is_none() {
+            continue; // already at driver default
+        }
+        // Delete so the driver default applies again (a previous tweak
+        // snapshot's rollback would restore any older user value).
+        win::registry::delete_registry_value(&location)?;
+        rollback::record_change(
+            db,
+            &snap.id,
+            ChangeRecord {
+                id: None,
+                snapshot_id: String::new(),
+                domain: "network".to_string(),
+                location: location.clone(),
+                kind: "delete".to_string(),
+                old_value: old.map(|v| v.to_string()),
+                new_value: None,
+                old_json: None,
+                new_json: None,
+                applied_at_ms: None,
+                verified: true,
+                rolled_back: false,
+            },
+        )?;
+        changes += 1;
+    }
+
+    Ok(TcpTweakResult {
+        snapshot_id: snap.id,
+        changes,
+    })
+}
+
+/// Ping `host` `count` times and summarize (min/median/max, loss, jitter).
+pub fn ping_test(host: &str, count: u32) -> crate::error::Result<crate::models::network::PingResult> {
+    use crate::models::network::PingResult;
+
+    let samples = win::ping::ping_host(host, count, 1000)?;
+    let mut sorted = samples.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    let received = samples.len() as u64;
+    let sent = count.min(64).max(1) as u64;
+    let loss_percent = if sent == 0 {
+        0.0
+    } else {
+        (sent - received) as f64 / sent as f64 * 100.0
+    };
+
+    // Jitter = mean absolute difference between consecutive RTTs.
+    let mut diffs = Vec::new();
+    for pair in samples.windows(2) {
+        diffs.push((pair[1] - pair[0]).abs());
+    }
+    let jitter = median(&diffs);
+
+    Ok(PingResult {
+        host: host.to_string(),
+        sent: sent as u32,
+        received: samples.len(),
+        loss_percent,
+        min_ms: sorted.first().copied(),
+        median_ms: median(&sorted),
+        max_ms: sorted.last().copied(),
+        jitter_ms: jitter,
+        samples_ms: samples,
     })
 }
 

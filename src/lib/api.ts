@@ -39,7 +39,11 @@ import type {
   StartupActionResult,
   StartupEntry,
   SystemStats,
+  ScheduledTask,
   TcpParameter,
+  TcpTweak,
+  TcpTweakResult,
+  PingResult,
   WSearchStatus,
 } from "./types";
 
@@ -83,12 +87,20 @@ export function diffSnapshots(a: string, b: string): Promise<unknown> {
   return invoke<unknown>("diff_snapshots", { a, b });
 }
 
+export function createSystemRestorePoint(description: string): Promise<number | null> {
+  return invoke<number | null>("create_system_restore_point", { description });
+}
+
 export function scanCleanup(): Promise<CleanupCategory[]> {
   return invoke<CleanupCategory[]>("scan_cleanup");
 }
 
 export function runCleanup(ids: string[]): Promise<CleanupResult> {
   return invoke<CleanupResult>("run_cleanup", { ids });
+}
+
+export function dismComponentCleanup(): Promise<string> {
+  return invoke<string>("dism_component_cleanup");
 }
 
 export function listProcesses(): Promise<ProcessDetail[]> {
@@ -168,6 +180,10 @@ export function listStartup(): Promise<StartupEntry[]> {
   return invoke<StartupEntry[]>("list_startup");
 }
 
+export function listScheduledTasks(): Promise<ScheduledTask[]> {
+  return invoke<ScheduledTask[]>("list_scheduled_tasks");
+}
+
 export function setStartupEnabled(
   location: string,
   enabled: boolean,
@@ -197,6 +213,22 @@ export function applyDns(guid: string, servers: string[]): Promise<DnsApplyResul
 
 export function tcpParameters(): Promise<TcpParameter[]> {
   return invoke<TcpParameter[]>("tcp_parameters");
+}
+
+export function listTcpTweaks(): Promise<TcpTweak[]> {
+  return invoke<TcpTweak[]>("list_tcp_tweaks");
+}
+
+export function applyTcpTweaks(): Promise<TcpTweakResult> {
+  return invoke<TcpTweakResult>("apply_tcp_tweaks");
+}
+
+export function resetTcpTweaks(): Promise<TcpTweakResult> {
+  return invoke<TcpTweakResult>("reset_tcp_tweaks");
+}
+
+export function pingTest(host: string, count: number): Promise<PingResult> {
+  return invoke<PingResult>("ping_test", { host, count });
 }
 
 export function listGpuAdapters(): Promise<GpuAdapter[]> {
@@ -267,6 +299,10 @@ export function applyGameProfile(gameId: number): Promise<GameProfileApplyResult
 
 export function restoreGameProfile(gameId: number): Promise<number> {
   return invoke<number>("restore_game_profile", { gameId });
+}
+
+export function removeGameDrsProfile(gameName: string): Promise<void> {
+  return invoke<void>("remove_game_drs_profile", { gameName });
 }
 
 export function runFpsBenchmark(

@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod engine;
 mod error;
+mod logging;
 mod models;
 pub mod win;
 
@@ -12,6 +13,17 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Log everything: devs see errors in the console, and a copy lands in
+    // logs.txt next to the installed Optix executable. Panics are captured
+    // too, so backend crashes are never invisible.
+    logging::init();
+    logging::info(&format!("optix v{} starting", env!("CARGO_PKG_VERSION")));
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        logging::panic(info);
+        default_hook(info);
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -25,6 +37,9 @@ pub fn run() {
             // auto-applies/restores enabled game profiles on launch/exit.
             let watcher = engine::game_watcher::GameWatcher::spawn(Database::open()?);
             app.manage(watcher);
+            // Live crash watch: polls the Application event log and emits
+            // `optix://crash-detected` when new crashes are logged.
+            engine::crash::spawn_crash_watch(app.handle().clone(), 20);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -39,8 +54,10 @@ pub fn run() {
             commands::snapshot::delete_snapshot,
             commands::snapshot::restore_snapshot,
             commands::snapshot::diff_snapshots,
+            commands::snapshot::create_system_restore_point,
             commands::cleanup::scan_cleanup,
             commands::cleanup::run_cleanup,
+            commands::cleanup::dism_component_cleanup,
             commands::bloatware::scan_bloatware,
             commands::bloatware::remove_bloatware,
             commands::processes::list_processes,
@@ -61,11 +78,16 @@ pub fn run() {
             commands::services::set_wsearch,
             commands::services::list_startup,
             commands::services::set_startup_enabled,
+            commands::services::list_scheduled_tasks,
             commands::network::network_status,
             commands::network::list_dns_servers,
             commands::network::benchmark_dns,
             commands::network::apply_dns,
             commands::network::tcp_parameters,
+            commands::network::list_tcp_tweaks,
+            commands::network::apply_tcp_tweaks,
+            commands::network::reset_tcp_tweaks,
+            commands::network::ping_test,
             commands::gpu::list_gpu_adapters,
             commands::gpu::list_gpu_toggles,
             commands::gpu::set_gpu_toggle,
@@ -82,6 +104,7 @@ pub fn run() {
             commands::games::save_game_profile,
             commands::games::apply_game_profile,
             commands::games::restore_game_profile,
+            commands::games::remove_game_drs_profile,
             commands::benchmark::run_fps_benchmark,
             commands::benchmark::run_stress_benchmark,
             commands::benchmark::list_benchmarks,
@@ -92,5 +115,9 @@ pub fn run() {
             commands::diagnostics::run_diagnostics,
         ])
         .run(tauri::generate_context!())
+        .map_err(|e| {
+            logging::error("tauri run failed", &e);
+            e
+        })
         .expect("error while running tauri application");
 }

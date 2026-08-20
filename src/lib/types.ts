@@ -222,6 +222,7 @@ export interface ProcessDetail {
   classification: ProcessClass;
   isSystem: boolean;
   priority: PriorityClass | null;
+  gpuUsagePercent: number;
 }
 
 export interface PriorityChange {
@@ -350,6 +351,31 @@ export interface TcpParameter {
   value: number | null;
 }
 
+export interface TcpTweak {
+  name: string;
+  description: string;
+  recommended: number;
+  current: number | null;
+  applied: boolean;
+}
+
+export interface TcpTweakResult {
+  snapshotId: string;
+  changes: number;
+}
+
+export interface PingResult {
+  host: string;
+  sent: number;
+  received: number;
+  lossPercent: number;
+  minMs: number | null;
+  medianMs: number | null;
+  maxMs: number | null;
+  jitterMs: number | null;
+  samplesMs: number[];
+}
+
 export interface DnsApplyResult {
   snapshotId: string;
   changes: number;
@@ -445,6 +471,7 @@ export interface GameProfileApplyResult {
   boosted: PriorityChange[];
   lowered: PriorityChange[];
   affinityApplied: AffinityChange[];
+  gpuProfile: string | null;
 }
 
 export interface BenchmarkResult {
@@ -519,9 +546,21 @@ export interface BloatwareRemoveResult {
   failed: AppxRemovalFailure[];
 }
 
+export interface ScheduledTask {
+  name: string;
+  status: string;
+  nextRun: string;
+  lastRun: string;
+  author: string;
+  action: string;
+  runAs: string;
+  signature: string;
+}
+
 export interface AppInfo {
   version: string;
   dataDir: string;
   snapshotsDir: string;
   snapshotRetention: number;
+  logPath: string;
 }

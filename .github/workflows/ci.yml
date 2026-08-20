@@ -94,6 +94,11 @@ jobs:
       - name: Run backend tests (Windows target)
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      # PresentMon is bundled as a Tauri resource; fetch it before packaging.
+      - name: Fetch PresentMon
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-presentmon.ps1
+
       - name: Build Windows installers (NSIS + MSI)
         uses: tauri-apps/tauri-action@v0
         env:

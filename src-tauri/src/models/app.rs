@@ -10,4 +10,6 @@ pub struct AppInfo {
     pub data_dir: String,
     pub snapshots_dir: String,
     pub snapshot_retention: usize,
+    /// Full path to `logs.txt` (console + file logging).
+    pub log_path: String,
 }
