@@ -56,6 +56,8 @@ const NETWORK_PROFILES = [
 ] as const;
 
 export function Games() {
+  const isWindows =
+    typeof navigator !== "undefined" && /windows|win32/i.test(navigator.userAgent);
   const [games, setGames] = useState<Game[]>([]);
   const [detected, setDetected] = useState<DetectedGame[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -494,6 +496,22 @@ export function Games() {
                         />
                         Lower background apps while playing
                       </label>
+                      {isWindows && (
+                        <label className="flex items-center gap-2 text-xs text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={draft.gpuProfile === "nvidia"}
+                            onChange={(e) =>
+                              setDraft({
+                                ...draft,
+                                gpuProfile: e.currentTarget.checked ? "nvidia" : null,
+                              })
+                            }
+                            className="h-4 w-4 accent-cyan-500"
+                          />
+                          NVIDIA driver profile (shader cache + power mode)
+                        </label>
+                      )}
                       <label className="flex items-center gap-2 text-xs text-slate-300">
                         <input
                           type="checkbox"

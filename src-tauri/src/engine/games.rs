@@ -7,6 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
+use sysinfo::{ProcessesToUpdate, System};
+
 use crate::db::sqlite::{Database, GameRow};
 use crate::engine::game_watcher::GameWatcher;
 use crate::error::{OptixError, Result};
@@ -284,16 +286,20 @@ pub fn running_pids(exe_name: &str, processes: &[(String, u32)]) -> Vec<u32> {
         .collect()
 }
 
-/// Snapshot of running processes as `(name, pid)` pairs.
-pub fn running_process_names() -> Vec<(String, u32)> {
-    use sysinfo::{ProcessesToUpdate, System};
-
-    let mut sys = System::new();
+/// Snapshot of running processes as `(name, pid)` pairs, reusing `sys`.
+/// Callers that poll (the game-mode watcher) keep one `System` alive rather
+/// than re-allocating the process table on every pass.
+pub fn process_names(sys: &mut System) -> Vec<(String, u32)> {
     sys.refresh_processes(ProcessesToUpdate::All, true);
     sys.processes()
         .iter()
         .map(|(pid, p)| (p.name().to_string_lossy().into_owned(), pid.as_u32()))
         .collect()
+}
+
+/// One-shot snapshot of running processes (allocates a fresh `System`).
+pub fn running_process_names() -> Vec<(String, u32)> {
+    process_names(&mut System::new())
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +351,13 @@ pub fn validate_profile(p: &GameProfile) -> Result<()> {
         if parse_affinity(Some(mask)).is_none() {
             return Err(OptixError::InvalidState(format!(
                 "invalid affinity_mask: {mask}"
+            )));
+        }
+    }
+    if let Some(gpu) = &p.gpu_profile {
+        if gpu != "nvidia" {
+            return Err(OptixError::InvalidState(format!(
+                "invalid gpu_profile: {gpu}"
             )));
         }
     }
@@ -522,10 +535,15 @@ pub fn row_to_game(row: &GameRow) -> Game {
     }
 }
 
-/// List saved games, annotated with live running/boosted state.
-pub fn list_games(db: &Database, watcher: Option<&GameWatcher>) -> Result<Vec<Game>> {
+/// List saved games, annotated with live running/boosted state. The process
+/// snapshot is provided by the caller (the command layer enumerates it off
+/// the main thread).
+pub fn list_games(
+    db: &Database,
+    watcher: Option<&GameWatcher>,
+    processes: Vec<(String, u32)>,
+) -> Result<Vec<Game>> {
     let rows = db.list_games()?;
-    let processes = running_process_names();
     let mut out = Vec::new();
     for row in rows {
         let mut g = row_to_game(&row);
@@ -704,6 +722,10 @@ mod tests {
         p.affinity_mask = Some("not-hex".into());
         assert!(validate_profile(&p).is_err());
         p.affinity_mask = Some("0xF0F".into());
+        assert!(validate_profile(&p).is_ok());
+        p.gpu_profile = Some("bogus".into());
+        assert!(validate_profile(&p).is_err());
+        p.gpu_profile = Some("nvidia".into());
         assert!(validate_profile(&p).is_ok());
     }
 

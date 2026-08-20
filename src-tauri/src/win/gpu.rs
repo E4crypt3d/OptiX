@@ -147,9 +147,10 @@ pub fn set_amd_shader_cache(_always_on: bool) -> Result<()> {
     Err(OptixError::UnsupportedPlatform("AMD shader cache".into()))
 }
 
-/// Roll back a `gpu`-domain change recorded by the engine (AMD shader cache).
-/// The value is REG_BINARY, which the generic registry rollback cannot
-/// restore, so this path re-writes the raw bytes captured before the change.
+/// Roll back a `gpu`-domain change recorded by the engine: AMD shader cache
+/// (REG_BINARY, which the generic registry rollback cannot restore — this
+/// path re-writes the raw bytes captured before the change) and NVIDIA DRS
+/// per-game profiles (removed by name).
 #[cfg(windows)]
 pub fn rollback_gpu(change: &ChangeRecord) -> Result<()> {
     match change.kind.as_str() {
@@ -162,6 +163,7 @@ pub fn rollback_gpu(change: &ChangeRecord) -> Result<()> {
             })?;
             write_shader_cache_bytes(&change.location, &bytes)
         }
+        "nvapi_profile" => crate::win::nvapi::remove_profile(&change.location),
         other => Err(OptixError::InvalidState(format!(
             "unknown GPU change kind: {other}"
         ))),

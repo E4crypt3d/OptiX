@@ -4,23 +4,31 @@ use tauri::State;
 
 use crate::db::sqlite::Database;
 use crate::engine::game_watcher::GameWatcher;
-use crate::engine::{games, power};
+use crate::engine::{games, power, rollback, snapshot};
 use crate::error::{OptixError, Result};
 use crate::models::games::{DetectedGame, Game, GameProfile, GameProfileApplyResult};
+use crate::models::snapshot::ChangeRecord;
 
 /// Scan installed launchers for games (read-only, nothing saved yet).
+/// File/registry scanning runs off the main thread.
 #[tauri::command]
-pub fn detect_games() -> Vec<DetectedGame> {
-    games::detect_all()
+pub async fn detect_games() -> Result<Vec<DetectedGame>> {
+    tauri::async_runtime::spawn_blocking(games::detect_all)
+        .await
+        .map_err(|e| OptixError::Other(e.to_string()))
 }
 
 /// List the saved game library, annotated with running/boosted state.
+/// Process enumeration runs off the main thread (the UI polls this).
 #[tauri::command]
-pub fn list_games(
+pub async fn list_games(
     db: State<'_, Database>,
     watcher: State<'_, Arc<GameWatcher>>,
 ) -> Result<Vec<Game>> {
-    games::list_games(db.inner(), Some(watcher.inner()))
+    let processes = tauri::async_runtime::spawn_blocking(games::running_process_names)
+        .await
+        .map_err(|e| OptixError::Other(e.to_string()))?;
+    games::list_games(db.inner(), Some(watcher.inner()), processes)
 }
 
 /// Add a detected game to the library (dedup + default profile).
@@ -57,13 +65,23 @@ pub fn add_manual_game(
     games::add_game(db.inner(), "manual", None, &name, &install_path, &executable)
 }
 
-/// Remove a game from the library.
+/// Remove a game from the library (best-effort DRS profile cleanup).
 #[tauri::command]
 pub fn remove_game(db: State<'_, Database>, id: i64) -> Result<()> {
-    if db.get_game(id)?.is_none() {
-        return Err(OptixError::InvalidState(format!("game {id} not found")));
+    let row = db
+        .get_game(id)?
+        .ok_or_else(|| OptixError::InvalidState(format!("game {id} not found")))?;
+    let had_nvidia_profile = db
+        .get_game_profile(id)?
+        .is_some_and(|p| p.gpu_profile.as_deref() == Some("nvidia"));
+    db.delete_game(id)?;
+    // Don't leave driver-settings profiles behind for removed games.
+    if had_nvidia_profile {
+        if let Err(e) = crate::win::nvapi::remove_profile(&row.name) {
+            crate::logging::warn(&format!("failed to remove DRS profile for {}: {e}", row.name));
+        }
     }
-    db.delete_game(id)
+    Ok(())
 }
 
 /// Fetch a game's profile (the default profile when none is saved yet).
@@ -107,7 +125,7 @@ pub fn apply_game_profile(
     games::validate_profile(&profile)?;
     let game = games::row_to_game(&row);
 
-    let (snapshot_id, power_applied) = if profile.power_profile != "none" {
+    let (mut snapshot_id, power_applied) = if profile.power_profile != "none" {
         let res = power::apply_profile(db.inner(), &profile.power_profile)?;
         (Some(res.snapshot_id), Some(res.scheme_name))
     } else {
@@ -118,6 +136,8 @@ pub fn apply_game_profile(
 
     // NVIDIA DRS per-game profile (best-effort: only on NVIDIA hardware with
     // `gpu_profile: nvidia`; failures surface in the UI, never fail the apply).
+    // The created profile is recorded in the apply snapshot so Rollback
+    // Center can remove it (restored via the `gpu` rollback domain).
     let gpu_profile = if profile.gpu_profile.as_deref() == Some("nvidia") {
         let opts = crate::win::nvapi::DrsOptions {
             prefer_max_performance: profile.power_profile != "none",
@@ -125,7 +145,39 @@ pub fn apply_game_profile(
         };
         let exe = (!game.executable.is_empty()).then(|| game.executable.as_str());
         match crate::win::nvapi::apply_profile(&game.name, exe, &opts) {
-            Ok(r) => Some(r.profile),
+            Ok(r) => {
+                let snap_id = match &snapshot_id {
+                    Some(id) => id.clone(),
+                    None => {
+                        let s = snapshot::create_lightweight(
+                            db.inner(),
+                            "NVIDIA DRS profile",
+                            Some(&game.name),
+                        )?;
+                        snapshot_id = Some(s.id.clone());
+                        s.id
+                    }
+                };
+                rollback::record_change(
+                    db.inner(),
+                    &snap_id,
+                    ChangeRecord {
+                        id: None,
+                        snapshot_id: String::new(),
+                        domain: "gpu".to_string(),
+                        location: game.name.clone(),
+                        kind: "nvapi_profile".to_string(),
+                        old_value: None,
+                        new_value: Some(r.profile.clone()),
+                        old_json: None,
+                        new_json: None,
+                        applied_at_ms: None,
+                        verified: true,
+                        rolled_back: false,
+                    },
+                )?;
+                Some(r.profile)
+            }
             Err(e) => {
                 // Best-effort for end users (e.g. no NVIDIA driver), but the
                 // real failure is logged so developers see it.

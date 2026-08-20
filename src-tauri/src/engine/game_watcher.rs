@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use sysinfo::System;
+
 use crate::db::sqlite::Database;
 use crate::engine::{games, processes::classify};
 use crate::models::games::{AffinityChange, Game, GameProfile};
@@ -51,9 +53,14 @@ impl GameWatcher {
     pub fn spawn(db: Database) -> Arc<Self> {
         let watcher = Arc::new(Self::new(db));
         let w = watcher.clone();
-        std::thread::spawn(move || loop {
-            w.tick();
-            std::thread::sleep(Duration::from_secs(2));
+        std::thread::spawn(move || {
+            // One System instance for the life of the watcher — reusing it
+            // avoids re-allocating the process table on every 2 s poll.
+            let mut sys = System::new();
+            loop {
+                w.tick(&mut sys);
+                std::thread::sleep(Duration::from_secs(2));
+            }
         });
         watcher
     }
@@ -69,6 +76,16 @@ impl GameWatcher {
     /// Apply a game's profile to its running processes (idempotent: a game
     /// already boosted is left untouched so restore tracking isn't clobbered).
     pub fn apply_game(&self, game: &Game, profile: &GameProfile) -> ApplyOutcome {
+        let processes = games::running_process_names();
+        self.apply_game_with(game, profile, &processes)
+    }
+
+    fn apply_game_with(
+        &self,
+        game: &Game,
+        profile: &GameProfile,
+        processes: &[(String, u32)],
+    ) -> ApplyOutcome {
         {
             let Ok(active) = self.active.lock() else {
                 return ApplyOutcome::default();
@@ -78,8 +95,7 @@ impl GameWatcher {
             }
         }
 
-        let processes = games::running_process_names();
-        let pids = games::running_pids(&game.exe_name, &processes);
+        let pids = games::running_pids(&game.exe_name, processes);
         let mut outcome = ApplyOutcome::default();
         if pids.is_empty() {
             return outcome;
@@ -104,7 +120,7 @@ impl GameWatcher {
         let mut watched: Vec<WatchedProcess> = Vec::new();
 
         for pid in pids {
-            let name = name_of(&processes, pid);
+            let name = name_of(processes, pid);
             if let Some(cur) = win::process::get_priority(pid) {
                 if cur != target {
                     match win::process::set_priority(pid, target) {
@@ -163,7 +179,7 @@ impl GameWatcher {
                         ));
                         continue;
                     }
-                    let name = name_of(&processes, pid);
+                    let name = name_of(processes, pid);
                     outcome.lowered.push(PriorityChange {
                         pid,
                         name,
@@ -198,44 +214,59 @@ impl GameWatcher {
     }
 
     /// One polling pass: apply newly-running enabled games, restore exited ones.
-    fn tick(&self) {
+    fn tick(&self, sys: &mut System) {
         let Ok(rows) = self.db.list_games() else {
             return;
         };
-        let processes = games::running_process_names();
+        // Load per-game state before touching the active map — the DB is a
+        // separate connection, and reading under the lock could stall applies
+        // from the command layer.
+        let games_list: Vec<(Game, bool)> = rows
+            .iter()
+            .map(|row| {
+                let enabled = self
+                    .db
+                    .get_game_profile(row.id)
+                    .ok()
+                    .flatten()
+                    .map(|p| p.enabled)
+                    .unwrap_or(false);
+                (games::row_to_game(row), enabled)
+            })
+            .collect();
+        let processes = games::process_names(sys);
 
-        let mut to_apply: Vec<(Game, GameProfile)> = Vec::new();
+        let mut to_apply: Vec<Game> = Vec::new();
         let mut to_restore: Vec<Vec<WatchedProcess>> = Vec::new();
 
         {
             let Ok(mut active) = self.active.lock() else {
                 return;
             };
-            for row in rows {
-                let Some(profile) = self.db.get_game_profile(row.id).ok().flatten() else {
-                    continue;
-                };
-                if !profile.enabled {
-                    if let Some(w) = active.remove(&row.id) {
+            for (game, enabled) in games_list {
+                if !enabled {
+                    if let Some(w) = active.remove(&game.id) {
                         to_restore.push(w);
                     }
                     continue;
                 }
-                let game = games::row_to_game(&row);
                 let pids = games::running_pids(&game.exe_name, &processes);
-                let currently = active.contains_key(&row.id);
+                let currently = active.contains_key(&game.id);
                 if !pids.is_empty() && !currently {
-                    to_apply.push((game, profile));
+                    to_apply.push(game);
                 } else if pids.is_empty() && currently {
-                    if let Some(w) = active.remove(&row.id) {
+                    if let Some(w) = active.remove(&game.id) {
                         to_restore.push(w);
                     }
                 }
             }
         }
 
-        for (game, profile) in to_apply {
-            self.apply_game(&game, &profile);
+        for game in to_apply {
+            let profile = self.db.get_game_profile(game.id).ok().flatten();
+            if let Some(profile) = profile {
+                self.apply_game_with(&game, &profile, &processes);
+            }
         }
         for watched in to_restore {
             restore_processes(watched);

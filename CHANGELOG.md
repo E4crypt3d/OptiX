@@ -5,6 +5,34 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-08-20
+
+### Added
+
+- **NVIDIA DRS per-game profiles**: applying a game profile with
+  `gpu_profile: nvidia` now creates a driver-settings (`nvapi64.dll` DRS)
+  profile with a per-game power/shader-cache preference, surfaced as an
+  "NVIDIA driver profile" toggle on the Games page (Windows only).
+- **DRS profile rollback**: the created NVIDIA profile is recorded in the
+  apply snapshot under a new `nvapi_profile` `gpu`-domain rollback kind, so
+  Rollback Center can remove it again.
+- **DRS profile cleanup on remove**: deleting a game that had an NVIDIA
+  profile removes its driver-settings profile (best-effort; failures are
+  logged rather than blocking the delete).
+- **GPU profile validation**: `validate_profile` now rejects unknown
+  `gpu_profile` values (only `nvidia` is supported).
+
+### Changed
+
+- **Reused process snapshot in game watcher**: the game-mode watcher keeps a
+  single `System` alive across its 2 s polls (`process_names(sys)`) instead of
+  re-allocating the process table every pass.
+- **Watcher deadlock fix**: per-game state is loaded before touching the
+  active-process map so the database is never read while holding the lock.
+- **Async game commands**: `detect_games` and `list_games` now run file,
+  registry, and process enumeration off the main thread, keeping the UI
+  responsive while the Games page polls.
+
 ## [0.12.0] - 2026-08-20
 
 ### Added
