@@ -222,11 +222,28 @@ export interface ProcessDetail {
   diskWrittenBytes: number;
   startTime: number;
   parentPid: number | null;
+  /** Number of threads/tasks (0 when the platform does not report it). */
+  threads: number;
+  /** Owning uid on Linux (0 = root); null on Windows. */
+  userId: number | null;
   status: string;
   classification: ProcessClass;
   isSystem: boolean;
   priority: PriorityClass | null;
   gpuUsagePercent: number;
+}
+
+export interface MemoryState {
+  totalBytes: number;
+  usedBytes: number;
+  availableBytes: number;
+  cachedBytes: number | null;
+  committedBytes: number | null;
+  committedLimitBytes: number | null;
+  swapTotalBytes: number;
+  swapUsedBytes: number;
+  usagePercent: number;
+  pressure: "normal" | "elevated" | "critical";
 }
 
 export interface PriorityChange {
@@ -482,6 +499,11 @@ export interface GameProfile {
   cleanupBg: boolean;
   gpuProfile: string | null;
   enabled: boolean;
+}
+
+export interface AffinityInfo {
+  processMask: number;
+  systemMask: number;
 }
 
 export interface AffinityChange {

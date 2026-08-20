@@ -6,6 +6,7 @@ mod logging;
 mod models;
 pub mod win;
 
+use commands::processes::ProcessMonitorState;
 use commands::system::MonitorState;
 use db::sqlite::Database;
 use engine::optimizer::OptimizerState;
@@ -33,6 +34,7 @@ pub fn run() {
             app.manage(db);
             app.manage(MonitorState::new());
             app.manage(OptimizerState::new());
+            app.manage(ProcessMonitorState::new());
             // Game-mode watcher runs on its own read-only DB connection and
             // auto-applies/restores enabled game profiles on launch/exit.
             let watcher = engine::game_watcher::GameWatcher::spawn(Database::open()?);
@@ -61,7 +63,13 @@ pub fn run() {
             commands::bloatware::scan_bloatware,
             commands::bloatware::remove_bloatware,
             commands::processes::list_processes,
+            commands::processes::memory_state,
             commands::processes::kill_process,
+            commands::processes::suspend_process,
+            commands::processes::resume_process,
+            commands::processes::get_process_affinity,
+            commands::processes::set_process_affinity,
+            commands::processes::foreground_pid,
             commands::processes::set_process_priority,
             commands::processes::apply_gaming_mode,
             commands::processes::restore_gaming_mode,

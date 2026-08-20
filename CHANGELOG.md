@@ -5,6 +5,40 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.0] - 2026-08-20
+
+### Added
+
+- **Memory state card** on the Processes & RAM page: total/used/available RAM,
+  cached (Linux) / committed (Windows), swap, and a pressure level
+  (normal / elevated / critical).
+- **Suspend / resume processes** on both platforms: Windows resolves
+  `NtSuspendProcess`/`NtResumeProcess` from ntdll at runtime (the mechanism
+  Process Explorer uses); Linux uses `SIGSTOP`/`SIGCONT`.
+- **CPU-affinity core picker** (Windows): read a process's affinity mask plus
+  the system mask and pin it to a chosen set of cores.
+- **Detect active game**: copy the PID owning the foreground window into the
+  gaming-mode game list (Windows `GetForegroundWindow`; Linux `xdotool`).
+- **Process table sorting** (name / CPU / RAM / disk / threads) and status
+  badges (suspended / zombie / dead / idle).
+- **Thread count and owning user id** per process (uid on Linux; null on
+  Windows where sysinfo exposes a SID).
+
+### Changed
+
+- **Shared process-sampling state**: one `System` instance is reused across
+  refreshes, so CPU percentages are measured over the real elapsed interval
+  (no fixed sleep on every refresh) and memory is never re-read twice.
+- **Live monitoring**: the process list auto-refreshes every 5 s while the
+  page is visible, pausing entirely when the window is hidden.
+- **`get_affinity` returns the system mask** along with the per-process mask.
+- **Gaming mode**: added "Detect active game" button; a process must be
+  running (not dead/zombie) to be controlled.
+- **Cross-platform build scripts** added to the package manifest
+  (`build:win`, `build:nsis`, `build:linux`) and the Windows
+  `Win32_System_SystemInformation` windows-sys feature enabled for the commit
+  charge read.
+
 ## [0.16.0] - 2026-08-20
 
 ### Added

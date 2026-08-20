@@ -1,6 +1,6 @@
 [package]
 name = "optix"
-version = "0.16.0"
+version = "0.17.0"
 description = "Windows gaming performance optimization and system recovery utility"
 authors = ["e4crypt3d"]
 edition = "2021"
@@ -40,6 +40,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Registry",
     "Win32_System_Restore",
     "Win32_System_Services",
+    "Win32_System_SystemInformation",
     "Win32_System_Threading",
     "Win32_Security_Cryptography",
     "Win32_UI_Shell",

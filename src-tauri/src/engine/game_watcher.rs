@@ -144,7 +144,7 @@ impl GameWatcher {
                 }
             }
             if let Some(mask) = mask {
-                let orig = win::process::get_affinity(pid);
+                let orig = win::process::get_affinity(pid).map(|(process, _)| process);
                 match win::process::set_affinity(pid, mask) {
                     Ok(()) => {
                         outcome.affinity.push(AffinityChange {

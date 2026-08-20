@@ -16,9 +16,11 @@ import type {
   GamingModeResult,
   HardwareInfo,
   HardwareSample,
+  MemoryState,
   NicAdapter,
   NicPowerResult,
   ActivePowerState,
+  AffinityInfo,
   PowerApplyResult,
   PowerPreview,
   PowerProfile,
@@ -107,8 +109,32 @@ export function listProcesses(): Promise<ProcessDetail[]> {
   return invoke<ProcessDetail[]>("list_processes");
 }
 
+export function memoryState(): Promise<MemoryState> {
+  return invoke<MemoryState>("memory_state");
+}
+
 export function killProcess(pid: number): Promise<void> {
   return invoke<void>("kill_process", { pid });
+}
+
+export function suspendProcess(pid: number): Promise<void> {
+  return invoke<void>("suspend_process", { pid });
+}
+
+export function resumeProcess(pid: number): Promise<void> {
+  return invoke<void>("resume_process", { pid });
+}
+
+export function getProcessAffinity(pid: number): Promise<AffinityInfo | null> {
+  return invoke<AffinityInfo | null>("get_process_affinity", { pid });
+}
+
+export function setProcessAffinity(pid: number, mask: number): Promise<void> {
+  return invoke<void>("set_process_affinity", { pid, mask });
+}
+
+export function foregroundPid(): Promise<number | null> {
+  return invoke<number | null>("foreground_pid");
 }
 
 export function setProcessPriority(pid: number, priority: PriorityClass): Promise<void> {

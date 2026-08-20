@@ -67,6 +67,38 @@ pub fn is_system_process(name: &str, session_id: Option<u32>) -> bool {
     session_id == Some(0) || REQUIRED_NAMES.contains(&lower.as_str())
 }
 
+/// Memory-pressure level: how full RAM is, combined with swap (pagefile) use.
+/// Pure so it is unit-testable without a live system.
+///
+/// - `critical`: almost no free memory (available < 4%) or RAM ≥ 92% used
+///   while the swap is in use.
+/// - `elevated`: RAM ≥ 80% used or ≥ 50% of the swap is consumed.
+/// - `normal`: otherwise.
+pub fn memory_pressure(
+    used_bytes: u64,
+    total_bytes: u64,
+    swap_used_bytes: u64,
+    swap_total_bytes: u64,
+) -> &'static str {
+    if total_bytes == 0 {
+        return "normal";
+    }
+    let used_pct = used_bytes as f64 / total_bytes as f64;
+    let available_pct = 1.0 - used_pct;
+    let swap_pct = if swap_total_bytes > 0 {
+        swap_used_bytes as f64 / swap_total_bytes as f64
+    } else {
+        0.0
+    };
+    if available_pct < 0.04 || (used_pct >= 0.92 && swap_used_bytes > 0) {
+        "critical"
+    } else if used_pct >= 0.80 || swap_pct >= 0.50 {
+        "elevated"
+    } else {
+        "normal"
+    }
+}
+
 /// Map a Windows `GetPriorityClass`/`SetPriorityClass` flag to our enum.
 ///
 /// The Win32 priority-class flags are: Idle=0x40, BelowNormal=0x4000,
@@ -136,6 +168,38 @@ mod tests {
         assert!(!is_system_process("chrome.exe", Some(1)));
         // Session 0 services are always system-owned regardless of name.
         assert!(is_system_process("myservice.exe", Some(0)));
+    }
+
+    #[test]
+    fn memory_pressure_thresholds() {
+        let total = 16u64 * 1024 * 1024 * 1024;
+        // Normal: 60% used, no swap.
+        assert_eq!(
+            memory_pressure(total / 10 * 6, total, 0, 0),
+            "normal"
+        );
+        // Elevated: 85% used.
+        assert_eq!(
+            memory_pressure(total / 100 * 85, total, 0, 8 * 1024 * 1024 * 1024),
+            "elevated"
+        );
+        // Elevated: half the swap consumed even at moderate RAM use.
+        assert_eq!(
+            memory_pressure(total / 2, total, 4 * 1024 * 1024 * 1024, 8 * 1024 * 1024 * 1024),
+            "elevated"
+        );
+        // Critical: RAM ≥ 92% used while swap is in use.
+        assert_eq!(
+            memory_pressure(total / 100 * 95, total, 1024 * 1024, 8 * 1024 * 1024 * 1024),
+            "critical"
+        );
+        // Critical: available below 4%.
+        assert_eq!(
+            memory_pressure(total - 100 * 1024 * 1024, total, 0, 0),
+            "critical"
+        );
+        // Degenerate inputs never panic.
+        assert_eq!(memory_pressure(0, 0, 0, 0), "normal");
     }
 
     #[test]

@@ -78,7 +78,11 @@ pub struct ProcessDetail {
     pub disk_written_bytes: u64,
     pub start_time: u64,
     pub parent_pid: Option<u32>,
-    /// Human-readable process status (e.g. "running", "sleeping").
+    /// Number of threads/tasks. 0 when the platform does not report it.
+    pub threads: usize,
+    /// Owning user id (uid on Linux; `Some(0)` = root). `None` on Windows.
+    pub user_id: Option<u32>,
+    /// Human-readable process status (e.g. "running", "sleeping", "stopped").
     pub status: String,
     /// "required" | "safe" | "unknown".
     pub classification: String,
@@ -91,6 +95,36 @@ pub struct ProcessDetail {
     /// summed), or 0 when unavailable. Windows only; rate counters make this
     /// sample take ~120 ms.
     pub gpu_usage_percent: f32,
+}
+
+/// System-wide memory state for the Processes & RAM page.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryState {
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub available_bytes: u64,
+    /// Buffers + cache on Linux; `None` where the platform does not report it.
+    pub cached_bytes: Option<u64>,
+    /// Commit charge (used commit) on Windows; `None` on Linux.
+    pub committed_bytes: Option<u64>,
+    /// Commit limit (physical + pagefile) on Windows; `None` on Linux.
+    pub committed_limit_bytes: Option<u64>,
+    pub swap_total_bytes: u64,
+    pub swap_used_bytes: u64,
+    pub usage_percent: f32,
+    /// "normal" | "elevated" | "critical".
+    pub pressure: String,
+}
+
+/// A process's current CPU-affinity mask and the system's core mask.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AffinityInfo {
+    /// Cores the process may run on.
+    pub process_mask: u64,
+    /// Cores the system has.
+    pub system_mask: u64,
 }
 
 /// Result of applying gaming mode: every priority change Optix made, kept for
