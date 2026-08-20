@@ -1,48 +1,54 @@
-import { useState } from "react";
-import { Benchmark } from "./components/Benchmark";
-import { Bloatware } from "./components/Bloatware";
-import { Cleanup } from "./components/Cleanup";
-import { CrashReports } from "./components/CrashReports";
-import { Diagnostics } from "./components/Diagnostics";
-import { Dashboard } from "./components/Dashboard";
-import { Games } from "./components/Games";
-import { Gpu } from "./components/Gpu";
-import { Network } from "./components/Network";
-import { Power } from "./components/Power";
-import { Processes } from "./components/Processes";
-import { Rollback } from "./components/Rollback";
-import { Scanner } from "./components/Scanner";
-import { Settings } from "./components/Settings";
-import { StartupServices } from "./components/StartupServices";
+import { lazy, Suspense, useState, type ComponentType, type LazyExoticComponent } from "react";
+import { Activity } from "lucide-react";
 import { Sidebar, type ViewId } from "./components/Sidebar";
-import { Snapshots } from "./components/Snapshots";
+
+/**
+ * Each view is loaded on demand so the heavy dependencies it pulls in
+ * (recharts on Dashboard/Benchmark, etc.) aren't parsed on startup — they're
+ * fetched only when the user opens that page, and cached afterwards.
+ */
+const viewModules: Record<ViewId, LazyExoticComponent<ComponentType>> = {
+  dashboard: lazy(() => import("./components/Dashboard").then((m) => ({ default: m.Dashboard }))),
+  scanner: lazy(() => import("./components/Scanner").then((m) => ({ default: m.Scanner }))),
+  snapshots: lazy(() => import("./components/Snapshots").then((m) => ({ default: m.Snapshots }))),
+  rollback: lazy(() => import("./components/Rollback").then((m) => ({ default: m.Rollback }))),
+  cleanup: lazy(() => import("./components/Cleanup").then((m) => ({ default: m.Cleanup }))),
+  bloatware: lazy(() => import("./components/Bloatware").then((m) => ({ default: m.Bloatware }))),
+  processes: lazy(() => import("./components/Processes").then((m) => ({ default: m.Processes }))),
+  power: lazy(() => import("./components/Power").then((m) => ({ default: m.Power }))),
+  startup: lazy(() => import("./components/StartupServices").then((m) => ({ default: m.StartupServices }))),
+  network: lazy(() => import("./components/Network").then((m) => ({ default: m.Network }))),
+  gpu: lazy(() => import("./components/Gpu").then((m) => ({ default: m.Gpu }))),
+  games: lazy(() => import("./components/Games").then((m) => ({ default: m.Games }))),
+  benchmarks: lazy(() => import("./components/Benchmark").then((m) => ({ default: m.Benchmark }))),
+  crash: lazy(() => import("./components/CrashReports").then((m) => ({ default: m.CrashReports }))),
+  diagnostics: lazy(() => import("./components/Diagnostics").then((m) => ({ default: m.Diagnostics }))),
+  settings: lazy(() => import("./components/Settings").then((m) => ({ default: m.Settings }))),
+};
 
 export default function App() {
   const [view, setView] = useState<ViewId>("dashboard");
+  const View = viewModules[view];
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#0a0e17] text-slate-100">
       <Sidebar active={view} onNavigate={setView} />
       <main className="flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-6xl">
-          {view === "dashboard" && <Dashboard />}
-          {view === "scanner" && <Scanner />}
-          {view === "snapshots" && <Snapshots />}
-          {view === "rollback" && <Rollback />}
-          {view === "cleanup" && <Cleanup />}
-          {view === "bloatware" && <Bloatware />}
-          {view === "processes" && <Processes />}
-          {view === "power" && <Power />}
-          {view === "startup" && <StartupServices />}
-          {view === "network" && <Network />}
-          {view === "gpu" && <Gpu />}
-          {view === "games" && <Games />}
-          {view === "benchmarks" && <Benchmark />}
-          {view === "crash" && <CrashReports />}
-          {view === "diagnostics" && <Diagnostics />}
-          {view === "settings" && <Settings />}
+          <Suspense fallback={<ViewLoading />}>
+            <View />
+          </Suspense>
         </div>
       </main>
+    </div>
+  );
+}
+
+function ViewLoading() {
+  return (
+    <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
+      <Activity className="h-4 w-4 animate-pulse" />
+      Loading…
     </div>
   );
 }

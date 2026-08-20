@@ -50,9 +50,17 @@ export function Rollback() {
       setChanges([]);
       return;
     }
+    let cancelled = false;
     listChanges(selectedId)
-      .then(setChanges)
-      .catch((e) => setError(errMsg(e)));
+      .then((changes) => {
+        if (!cancelled) setChanges(changes);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errMsg(e));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedId]);
 
   async function onRestore() {

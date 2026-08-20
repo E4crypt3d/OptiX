@@ -258,7 +258,7 @@ export function StartupServices() {
       >
         <ul className="max-h-[32rem] divide-y divide-slate-800/60 overflow-y-auto">
           {visible.map((s) => (
-            <li key={s.name} className="flex items-center gap-3 py-2.5">
+            <li key={s.name} className="cv-row flex items-center gap-3 py-2.5">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-slate-200">{s.displayName || s.name}</span>

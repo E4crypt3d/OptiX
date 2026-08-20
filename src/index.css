@@ -18,6 +18,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Skip layout/painting for cards below the fold (Chromium/WebView2). `auto`
+   remembers the last rendered size so tall pages keep stable scroll height. */
+.cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
+}
+
+/* Row-level variant for long scrollable lists (e.g. ~300 services). */
+.cv-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}
+
 /* Subtle scrollbar for the dark theme */
 ::-webkit-scrollbar {
   width: 10px;

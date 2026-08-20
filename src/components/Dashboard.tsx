@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useInterval } from "../lib/useInterval";
 import {
   Activity,
   ArrowDown,
@@ -35,44 +36,40 @@ export function Dashboard() {
   const historyRef = useRef<HistoryPoint[]>([]);
 
   useEffect(() => {
-    scanSystem().then(setInfo).catch(console.error);
-  }, []);
-
-  // Persist a telemetry sample every 30s while the dashboard is open.
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      void recordSample().catch(console.error);
-    }, 30_000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
-
-    async function poll() {
-      try {
-        const next = await systemStats();
-        if (cancelled) return;
-        setStats(next);
-        const point: HistoryPoint = {
-          time: new Date(next.timestampMs).toLocaleTimeString(),
-          cpu: next.cpuUsagePercent,
-          ram: next.memory.usagePercent,
-        };
-        historyRef.current = [...historyRef.current.slice(-59), point];
-        setHistory(historyRef.current);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    void poll();
-    const id = window.setInterval(() => void poll(), 1500);
+    scanSystem()
+      .then((info) => {
+        if (!cancelled) setInfo(info);
+      })
+      .catch(console.error);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
     };
   }, []);
+
+  // Telemetry polling is paused while the window is hidden, so the dashboard
+  // idles at zero cost when minimized or covered by other windows.
+  useInterval(() => {
+    void recordSample().catch(console.error);
+  }, 30_000);
+
+  async function poll() {
+    try {
+      const next = await systemStats();
+      setStats(next);
+      const point: HistoryPoint = {
+        time: new Date(next.timestampMs).toLocaleTimeString(),
+        cpu: next.cpuUsagePercent,
+        ram: next.memory.usagePercent,
+      };
+      historyRef.current = [...historyRef.current.slice(-59), point];
+      setHistory(historyRef.current);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  useInterval(() => void poll(), 1500);
 
   const down = stats?.network.reduce((a, n) => a + n.receivedBytes, 0) ?? 0;
   const up = stats?.network.reduce((a, n) => a + n.transmittedBytes, 0) ?? 0;

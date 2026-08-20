@@ -57,7 +57,7 @@ A few honest ground rules up front:
   already elevated, because registry, services, power schemes, and process
   controls all require admin.
 
-### Install & run
+### Install & run (Windows)
 
 1. Download the latest installer from the
    [Releases](../../releases) page.
@@ -68,6 +68,31 @@ A few honest ground rules up front:
 > **Tip:** Optix stores its database and snapshots under
 > `C:\ProgramData\Optix`. If you ever want to start fresh, that's the directory
 > to remove (do this while Optix is closed).
+
+### Linux support (Pop!_OS / Ubuntu)
+
+Linux builds are fully supported as a development target and are packaged as
+`.deb` and AppImage from CI. The scanner, snapshots, cleanup, DNS benchmark,
+stress benchmark, and telemetry all work on Linux; registry-, service-, power-,
+GPU-driver- and PresentMon-based features are Windows-only and are
+gracefully hidden or report "Windows-only" instead of failing.
+
+**Run from source** on Pop!_OS 22.04/24.04 or Ubuntu 22.04/24.04:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev build-essential libxdo-dev \
+  libssl-dev libayatana-appindicator3-dev librsvg2-dev
+npm install
+npm run tauri dev
+```
+
+**Install a packaged build** from the [Releases](../../releases) page:
+
+- `optix_<version>_amd64.deb` → `sudo apt install ./optix_<version>_amd64.deb`
+- `optix_<version>_amd64.AppImage` → `chmod +x`, then run it
+
+On Linux, Optix stores its database and snapshots under
+`~/.local/share/optix`.
 
 ## Honest expectations
 
@@ -184,8 +209,8 @@ npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bun
 
 ### CI
 
-GitHub Actions runs backend tests on Linux and builds NSIS + MSI installers on
-`windows-latest`.
+GitHub Actions runs backend tests on Linux, builds `.deb` + AppImage installers
+on `ubuntu-latest`, and builds NSIS + MSI installers on `windows-latest`.
 
 ### Roadmap / status
 

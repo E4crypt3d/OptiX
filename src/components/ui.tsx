@@ -13,7 +13,7 @@ export function Card({
 }) {
   return (
     <section
-      className={`rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm ${className}`}
+      className={`cv rounded-xl border border-slate-800 bg-slate-900/60 p-4 shadow-sm ${className}`}
     >
       {title && (
         <header className="mb-3 flex items-center justify-between">

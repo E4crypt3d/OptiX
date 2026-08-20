@@ -31,6 +31,46 @@ jobs:
       - name: Run backend tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Produces .deb (Pop!_OS/Ubuntu) and AppImage installers. FUSE is not
+      # available on GitHub's 24.04 runners, so linuxdeploy is run in
+      # extract-and-run mode instead of mounting the AppImage.
+      - name: Build Linux installers (.deb + AppImage)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        with:
+          args: --bundles deb,appimage
+
   build-windows:
     runs-on: windows-latest
     steps:

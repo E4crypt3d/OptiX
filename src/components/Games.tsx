@@ -1,5 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useState } from "react";
+import { useInterval } from "../lib/useInterval";
 import {
   FolderOpen,
   Gamepad2,
@@ -80,10 +81,8 @@ export function Games() {
   }, [refresh]);
 
   // Light polling so running/boosted badges track the background watcher.
-  useEffect(() => {
-    const id = window.setInterval(() => void refresh(), 3000);
-    return () => window.clearInterval(id);
-  }, [refresh]);
+  // Paused while the window is hidden to avoid needless process enumeration.
+  useInterval(() => void refresh(), 3000);
 
   async function onScan() {
     setScanning(true);

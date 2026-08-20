@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gauge, Play, RefreshCw, Trash2 } from "lucide-react";
 import {
   benchmarkFrameTimes,
@@ -9,6 +9,7 @@ import {
   runStressBenchmark,
 } from "../lib/api";
 import type { BenchmarkResult, Game } from "../lib/types";
+import { decimateFrameTimes } from "../lib/decimate";
 import { formatBytes } from "../lib/format";
 import { errMsg } from "../lib/errors";
 import { Badge, Card } from "./ui";
@@ -41,6 +42,7 @@ export function Benchmark() {
   const [duration, setDuration] = useState(30);
   const [chartId, setChartId] = useState<number | null>(null);
   const [chartData, setChartData] = useState<{ frame: number; ms: number }[]>([]);
+  const chartToken = useRef(0);
   const [compare, setCompare] = useState<Set<number>>(new Set());
 
   const refresh = useCallback(async () => {
@@ -112,12 +114,17 @@ export function Benchmark() {
   }
 
   async function onChart(id: number) {
+    const token = ++chartToken.current;
     setChartId(id);
     try {
       const times = await benchmarkFrameTimes(id);
-      setChartData(times.map((ms, i) => ({ frame: i + 1, ms: Number(ms.toFixed(2)) })));
+      // A full capture can hold tens of thousands of frames; decimate before
+      // rendering so the chart stays responsive.
+      const points = times.map((ms, i) => ({ frame: i + 1, ms: Number(ms.toFixed(2)) }));
+      if (chartToken.current !== token) return; // a newer chart was requested
+      setChartData(decimateFrameTimes(points, 1500));
     } catch {
-      setChartData([]);
+      if (chartToken.current === token) setChartData([]);
     }
   }
 
