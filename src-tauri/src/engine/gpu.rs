@@ -411,17 +411,28 @@ fn walk(dir: &PathBuf, visit: &mut impl FnMut(&fs::Metadata)) {
 pub fn list_adapters() -> Vec<GpuAdapter> {
     let gpus = win::hardware::detect_gpus();
     let vram = win::wmi::video_controllers();
-    gpus.into_iter()
-        .enumerate()
-        .map(|(i, g)| GpuAdapter {
-            name: g.name,
-            vendor: g.vendor,
-            driver_version: g.driver_version,
-            memory_bytes: vram
-                .get(i)
+    gpus
+        .into_iter()
+        .map(|g| {
+            let gpu_name = g.name.to_ascii_lowercase();
+            let wmi_memory = vram
+                .iter()
+                .find(|v| {
+                    let controller_name = v.name.to_ascii_lowercase();
+                    gpu_name == controller_name
+                        || (!gpu_name.is_empty()
+                            && !controller_name.is_empty()
+                            && (gpu_name.contains(&controller_name)
+                                || controller_name.contains(&gpu_name)))
+                })
                 .map(|v| v.adapter_ram_bytes)
-                .unwrap_or(0)
-                .max(g.memory_bytes),
+                .unwrap_or(0);
+            GpuAdapter {
+                name: g.name,
+                vendor: g.vendor,
+                driver_version: g.driver_version,
+                memory_bytes: wmi_memory.max(g.memory_bytes),
+            }
         })
         .collect()
 }

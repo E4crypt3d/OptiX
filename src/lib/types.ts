@@ -57,9 +57,11 @@ export interface NetworkInterface {
 }
 
 export interface DisplayInfo {
+  name: string;
   width: number;
   height: number;
   refreshRate: number;
+  isPrimary: boolean;
 }
 
 export interface TemperatureInfo {

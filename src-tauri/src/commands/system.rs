@@ -161,7 +161,7 @@ pub(crate) fn scan_system_blocking() -> Result<HardwareInfo> {
     };
 
     let gpus = win::hardware::detect_gpus();
-    let displays: Vec<DisplayInfo> = win::hardware::primary_display().into_iter().collect();
+    let displays: Vec<DisplayInfo> = win::hardware::displays();
     let startup_apps = win::hardware::detect_startup_apps();
 
     let info = HardwareInfo {

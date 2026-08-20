@@ -72,6 +72,10 @@ export function ProgressBar({
   const gradient = tones[tone ?? "cyan"] ?? tones.cyan;
   return (
     <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(clamped)}
       className={`h-2 w-full overflow-hidden rounded-full bg-slate-800 ${className}`}
     >
       <div

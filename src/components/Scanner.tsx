@@ -149,7 +149,7 @@ export function Scanner() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">No GPU detected</p>
+                <p className="text-sm text-slate-500">No graphics adapters detected</p>
               )}
             </Card>
 
@@ -201,9 +201,12 @@ export function Scanner() {
                       <Monitor className="mt-0.5 h-5 w-5 shrink-0 text-cyan-400" />
                       <div className="text-sm">
                         <div className="font-medium text-slate-200">
-                          {d.width}×{d.height}
+                          {d.name || `Display ${i + 1}`}
                         </div>
-                        <div className="mt-1 text-slate-500">{d.refreshRate} Hz</div>
+                        <div className="mt-1 text-slate-500">
+                          {d.width}×{d.height} · {d.refreshRate > 0 ? `${d.refreshRate} Hz` : "refresh rate unavailable"}
+                          {d.isPrimary ? " · Primary" : ""}
+                        </div>
                       </div>
                     </div>
                   ))}

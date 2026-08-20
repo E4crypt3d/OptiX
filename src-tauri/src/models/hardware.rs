@@ -89,10 +89,13 @@ pub struct NetworkInterface {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayInfo {
+    /// Windows display device name or a friendly fallback.
+    pub name: String,
     pub width: u32,
     pub height: u32,
     /// Refresh rate in Hz.
     pub refresh_rate: u32,
+    pub is_primary: bool,
 }
 
 /// A temperature sensor reading.

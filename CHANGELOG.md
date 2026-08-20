@@ -5,6 +5,35 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-08-20
+
+### Added
+
+- **Multi-display support**: enumerate all active Windows displays with name,
+  resolution, refresh rate, and primary-display indicator; falls back to
+  `EnumDisplaySettingsW`, `GetSystemMetrics`, and a "Primary display" sentinel
+  for unusual drivers.
+- **GPU detection overhaul**: three-source merge (registry, WMI, EnumDisplayDevices)
+  with name-based matching instead of index-based pairing — integrated GPUs on
+  dual-adapter laptops are no longer hidden.
+- **Dashboard rescan button**: manual hardware re-scan from the Dashboard header
+  with loading spinner and error recovery.
+- **Redesigned per-core usage cards**: card-per-core layout with percentage
+  badge, responsive grid up to 6 columns.
+- **Dedicated Graphics adapters and Displays cards**: GPU card shows vendor,
+  driver version, and VRAM; display card shows name, primary badge, and
+  resolution/refresh-rate per monitor.
+- **CPU vendor** shown on the Dashboard CPU card.
+- **Progress bar accessibility**: `role="progressbar"` with `aria-valuemin`,
+  `aria-valuemax`, and `aria-valuenow`.
+- **Sub-minute uptime formatting**: `formatUptime` now renders seconds when
+  under one minute.
+
+### Fixed
+
+- GPU VRAM enrichment now uses name-based WMI matching instead of index
+  pairing, preventing wrong-card VRAM on multi-GPU systems.
+
 ## [0.7.0] - 2026-08-20
 
 ### Added

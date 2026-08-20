@@ -5,9 +5,10 @@ import {
   ArrowDown,
   ArrowUp,
   Cpu,
-  HardDrive,
+  Gpu,
   MemoryStick,
   Monitor,
+  RefreshCw,
 } from "lucide-react";
 import {
   Area,
@@ -65,6 +66,7 @@ function sampleToPoint(s: HardwareSample): HistoryPoint {
 export function Dashboard() {
   const [info, setInfo] = useState<HardwareInfo | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanLoading, setScanLoading] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>(sharedHistory);
 
@@ -130,6 +132,19 @@ export function Dashboard() {
 
   useInterval(() => void poll(), 1500);
 
+  async function rescanInfo() {
+    setScanLoading(true);
+    setScanError(null);
+    try {
+      setInfo(await loadInfo(true));
+    } catch (e) {
+      console.error(e);
+      setScanError(String(e));
+    } finally {
+      setScanLoading(false);
+    }
+  }
+
   const cpu = stats?.cpuUsagePercent;
   const mem = stats?.memory ?? info?.memory;
   // Rates are computed in the backend from refresh-window byte deltas.
@@ -150,7 +165,17 @@ export function Dashboard() {
               : "Loading system information…"}
           </p>
         </div>
-        {info && <span className="text-xs text-slate-500">{info.os.hostName}</span>}
+        <div className="flex items-center gap-3">
+          {info && <span className="text-xs text-slate-500">{info.os.hostName}</span>}
+          <button
+            onClick={rescanInfo}
+            disabled={scanLoading}
+            className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${scanLoading ? "animate-spin" : ""}`} />
+            Rescan
+          </button>
+        </div>
       </header>
 
       {scanError && (
@@ -208,8 +233,8 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card title="CPU & Memory History" className="xl:col-span-2">
+      <div className="space-y-4">
+        <Card title="CPU & Memory History" action={<span className="text-xs text-slate-500">Last 90 seconds</span>}>
           <div
             className="h-64"
             role="img"
@@ -249,20 +274,32 @@ export function Dashboard() {
           </div>
         </Card>
 
-        <Card title="Per-Core Usage">
+        <Card
+          title="Per-Core Usage"
+          action={
+            (stats?.perCoreUsage ?? []).length > 0 ? (
+              <span className="text-xs text-slate-500">
+                {(stats?.perCoreUsage ?? []).length} logical processors
+              </span>
+            ) : undefined
+          }
+        >
           {(stats?.perCoreUsage ?? []).length === 0 ? (
             <p className="text-sm text-slate-500">Collecting core data…</p>
           ) : (
-            <div className="grid max-h-72 grid-cols-2 gap-x-4 gap-y-2 overflow-y-auto pr-1 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
               {(stats?.perCoreUsage ?? []).map((usage, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="w-12 shrink-0 text-xs text-slate-400">
-                    Core {i}
-                  </span>
-                  <ProgressBar value={usage} tone="cyan" className="flex-1" />
-                  <span className="w-10 shrink-0 text-right text-xs tabular-nums text-slate-400">
-                    {usage.toFixed(0)}%
-                  </span>
+                <div
+                  key={i}
+                  className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-400">Core {i}</span>
+                    <span className="text-sm font-semibold tabular-nums text-slate-200">
+                      {usage.toFixed(0)}%
+                    </span>
+                  </div>
+                  <ProgressBar value={usage} tone="cyan" />
                 </div>
               ))}
             </div>
@@ -270,67 +307,99 @@ export function Dashboard() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card title="CPU">
           {info ? (
             <div className="space-y-2 text-sm">
               <Row label="Model" value={info.cpu.brand || info.cpu.name} />
               <Row label="Cores" value={`${info.cpu.physicalCores} physical / ${info.cpu.logicalCores} logical`} />
               <Row label="Clock" value={formatFrequency(info.cpu.frequencyMhz)} />
+              <Row label="Vendor" value={info.cpu.vendor || "—"} />
             </div>
           ) : (
             <Loading />
           )}
         </Card>
-        <Card title="GPU">
+
+        <Card title="Graphics adapters">
           {info && info.gpus.length > 0 ? (
             <div className="space-y-3 text-sm">
               {info.gpus.map((g, i) => (
-                <div key={i} className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-slate-200">{g.name}</span>
+                <div key={`${g.name}-${i}`} className="space-y-1.5">
+                  <div className="flex items-start gap-2">
+                    <Gpu className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium leading-5 text-slate-200">{g.name}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {[g.vendor, g.driverVersion ? `Driver ${g.driverVersion}` : ""]
+                          .filter(Boolean)
+                          .join(" · ") || "Driver information unavailable"}
+                      </div>
+                    </div>
                     {info.gpus.length > 1 && <Badge tone="slate">#{i + 1}</Badge>}
                   </div>
-                  <p className="text-xs text-slate-500">
-                    {[g.vendor, g.driverVersion].filter(Boolean).join(" · ") || "—"}
-                  </p>
+                  <div className="pl-6 text-xs text-slate-500">
+                    VRAM {g.memoryBytes > 0 ? formatBytes(g.memoryBytes) : "shared / system managed"}
+                  </div>
                 </div>
               ))}
             </div>
+          ) : info ? (
+            <p className="text-sm text-slate-500">No graphics adapters detected</p>
           ) : (
-            <p className="text-sm text-slate-500">
-              {info ? "No discrete GPU detected" : "Loading…"}
-            </p>
+            <Loading />
           )}
         </Card>
-        <Card title="Display & Storage">
+
+        <Card title="Displays">
+          {info && info.displays.length > 0 ? (
+            <div className="space-y-3 text-sm">
+              {info.displays.map((d, i) => (
+                <div key={`${d.name}-${i}`} className="flex items-start gap-2">
+                  <Monitor className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium text-slate-200">
+                        {d.name || `Display ${i + 1}`}
+                      </span>
+                      {d.isPrimary && <Badge tone="cyan">Primary</Badge>}
+                    </div>
+                    <div className="mt-1 text-slate-500">
+                      {d.width}×{d.height} · {d.refreshRate > 0 ? `${d.refreshRate} Hz` : "refresh rate unavailable"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : info ? (
+            <p className="text-sm text-slate-500">No connected displays detected</p>
+          ) : (
+            <Loading />
+          )}
+        </Card>
+
+        <Card title="Storage">
           {info ? (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2 text-slate-400">
-                <Monitor className="h-4 w-4" />
-                {info.displays.length > 0
-                  ? `${info.displays[0].width}×${info.displays[0].height} @ ${info.displays[0].refreshRate} Hz`
-                  : "Display info unavailable"}
-              </div>
-              <div className="flex items-center gap-2 text-slate-400">
-                <HardDrive className="h-4 w-4" />
-                {info.disks.length > 0
-                  ? `${info.disks.length} storage device${info.disks.length === 1 ? "" : "s"}`
-                  : "No storage detected"}
-              </div>
+            <div className="space-y-3 text-sm">
+              {info.disks.length === 0 && (
+                <p className="text-slate-500">No storage detected</p>
+              )}
               {info.disks.map((d) => (
-                <div key={d.mountPoint} className="flex items-center gap-3">
-                  <span className="w-24 shrink-0 truncate text-xs text-slate-400">
-                    {d.mountPoint}
-                  </span>
+                <div key={d.mountPoint} className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-slate-300">{d.mountPoint}</span>
+                    <Badge tone={d.kind === "SSD" ? "cyan" : d.kind === "HDD" ? "amber" : "slate"}>
+                      {d.kind}
+                    </Badge>
+                  </div>
                   <ProgressBar
                     value={(d.usedBytes / Math.max(1, d.totalBytes)) * 100}
                     tone="violet"
-                    className="flex-1"
                   />
-                  <span className="w-32 shrink-0 text-right text-xs tabular-nums text-slate-400">
-                    {formatBytes(d.usedBytes)} / {formatBytes(d.totalBytes)}
-                  </span>
+                  <div className="flex justify-between gap-2 text-xs tabular-nums text-slate-500">
+                    <span>{formatBytes(d.usedBytes)} used</span>
+                    <span>{formatBytes(d.totalBytes)} total</span>
+                  </div>
                 </div>
               ))}
             </div>

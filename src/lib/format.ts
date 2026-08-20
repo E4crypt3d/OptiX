@@ -21,7 +21,8 @@ export function formatUptime(seconds: number): string {
   const m = Math.floor((seconds % 3600) / 60);
   if (d > 0) return `${d}d ${h}h ${m}m`;
   if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${Math.floor(seconds)}s`;
 }
 
 export function formatPercent(value: number): string {

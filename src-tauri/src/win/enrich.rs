@@ -7,10 +7,18 @@ pub fn enrich(mut info: HardwareInfo) -> HardwareInfo {
     // GPU VRAM from WMI. AdapterRAM is a 32-bit field, so cards above 4 GiB are
     // under-reported; DXGI (added in a later phase) is the accurate source.
     let controllers = super::wmi::video_controllers();
-    for (i, gpu) in info.gpus.iter_mut().enumerate() {
-        if let Some(c) = controllers.get(i) {
-            if c.adapter_ram_bytes > 0 {
-                gpu.memory_bytes = c.adapter_ram_bytes;
+    for gpu in &mut info.gpus {
+        let gpu_name = gpu.name.to_ascii_lowercase();
+        if let Some(controller) = controllers.iter().find(|c| {
+            let controller_name = c.name.to_ascii_lowercase();
+            gpu_name == controller_name
+                || (!gpu_name.is_empty()
+                    && !controller_name.is_empty()
+                    && (gpu_name.contains(&controller_name)
+                        || controller_name.contains(&gpu_name)))
+        }) {
+            if controller.adapter_ram_bytes > 0 {
+                gpu.memory_bytes = controller.adapter_ram_bytes;
             }
         }
     }
