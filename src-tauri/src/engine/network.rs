@@ -157,50 +157,77 @@ pub fn default_servers() -> Vec<DnsServer> {
 }
 
 /// Benchmark every resolver against `domains`, measuring median/p95/min
-/// latency and packet loss.
+/// latency and packet loss. Resolvers are probed on separate threads so one
+/// slow or unreachable server doesn't stall the whole run.
 pub fn benchmark(
     servers: &[DnsServer],
     domains: &[String],
     queries_per_domain: usize,
 ) -> Vec<DnsBenchmarkResult> {
-    servers
-        .iter()
-        .map(|s| {
-            let mut latencies = Vec::new();
-            let mut failures = 0usize;
-            let mut queries = 0usize;
-            for domain in domains {
-                for _ in 0..queries_per_domain {
-                    queries += 1;
-                    match query_once(&s.ip, domain, 2000) {
-                        Ok(ms) => latencies.push(ms),
-                        Err(_) => failures += 1,
-                    }
-                }
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = servers
+            .iter()
+            .map(|s| scope.spawn(move || benchmark_one(s, domains, queries_per_domain)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("benchmark thread panicked"))
+            .collect()
+    })
+}
+
+/// Probe one resolver against every domain and summarize the results.
+fn benchmark_one(
+    server: &DnsServer,
+    domains: &[String],
+    queries_per_domain: usize,
+) -> DnsBenchmarkResult {
+    let mut latencies = Vec::new();
+    let mut failures = 0usize;
+    let mut queries = 0usize;
+    for domain in domains {
+        for _ in 0..queries_per_domain {
+            queries += 1;
+            match query_once(&server.ip, domain, 2000) {
+                Ok(ms) => latencies.push(ms),
+                Err(_) => failures += 1,
             }
-            latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-            let loss_percent = if queries == 0 {
-                0.0
-            } else {
-                failures as f64 / queries as f64 * 100.0
-            };
-            DnsBenchmarkResult {
-                name: s.name.clone(),
-                ip: s.ip.clone(),
-                is_current: s.is_current,
-                median_ms: median(&latencies),
-                p95_ms: percentile(&latencies, 0.95),
-                min_ms: latencies.first().copied(),
-                loss_percent,
-                queries,
-                failures,
-            }
-        })
-        .collect()
+        }
+    }
+    latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    let loss_percent = if queries == 0 {
+        0.0
+    } else {
+        failures as f64 / queries as f64 * 100.0
+    };
+    DnsBenchmarkResult {
+        name: server.name.clone(),
+        ip: server.ip.clone(),
+        is_current: server.is_current,
+        median_ms: median(&latencies),
+        p95_ms: percentile(&latencies, 0.95),
+        min_ms: latencies.first().copied(),
+        loss_percent,
+        queries,
+        failures,
+    }
 }
 
 /// Apply static DNS servers to an adapter (snapshot-first, reversible).
 pub fn apply_dns(db: &Database, guid: &str, servers: &[String]) -> Result<DnsApplyResult> {
+    // Refuse unknown adapters and malformed server lists up front — a stale
+    // GUID must never create a junk registry key under `Interfaces`.
+    if !win::network::list_adapters().iter().any(|a| a.guid == guid) {
+        return Err(OptixError::InvalidState(format!("unknown adapter: {guid}")));
+    }
+    if servers.is_empty()
+        || servers.len() > 4
+        || servers.iter().any(|s| s.parse::<std::net::Ipv4Addr>().is_err())
+    {
+        return Err(OptixError::InvalidState(
+            "DNS servers must be 1-4 valid IPv4 addresses".into(),
+        ));
+    }
     let location = format!(
         r"HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{guid}\NameServer"
     );
@@ -383,6 +410,17 @@ pub fn reset_tcp_tweaks(db: &Database) -> Result<crate::models::network::TcpTwea
         // Delete so the driver default applies again (a previous tweak
         // snapshot's rollback would restore any older user value).
         win::registry::delete_registry_value(&location)?;
+        // Verify the deletion landed; on failure restore the previous value.
+        if win::network::tcp_value(name).is_some() {
+            if let Some(prev) = old {
+                if let Err(e) = win::registry::set_registry_value(&location, &prev.to_string()) {
+                    crate::logging::error(&format!("TCP revert (restore {name})"), &e);
+                }
+            }
+            return Err(OptixError::Windows(format!(
+                "TCP tweak {name} revert verification failed; restored"
+            )));
+        }
         rollback::record_change(
             db,
             &snap.id,
@@ -425,7 +463,7 @@ pub fn ping_test(host: &str, count: u32) -> crate::error::Result<crate::models::
         (sent - received) as f64 / sent as f64 * 100.0
     };
 
-    // Jitter = mean absolute difference between consecutive RTTs.
+    // Jitter = median absolute difference between consecutive RTTs.
     let mut diffs = Vec::new();
     for pair in samples.windows(2) {
         diffs.push((pair[1] - pair[0]).abs());

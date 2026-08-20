@@ -54,6 +54,8 @@ function signatureTone(sig: string): "rose" | "emerald" | "slate" | "amber" {
 }
 
 export function StartupServices() {
+  const isWindows =
+    typeof navigator !== "undefined" && /windows|win32/i.test(navigator.userAgent);
   const [services, setServices] = useState<ServiceInfo[]>([]);
   const [startup, setStartup] = useState<StartupEntry[]>([]);
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
@@ -180,7 +182,12 @@ export function StartupServices() {
       )}
 
       <Card title="Windows Search Index">
-        {wsearch && (
+        {!isWindows ? (
+          <p className="text-sm text-slate-500">
+            Windows Search is a Windows service; it can't be controlled on this
+            platform.
+          </p>
+        ) : wsearch ? (
           <div className="flex items-center gap-4">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800">
               <Search className="h-4 w-4 text-cyan-400" />
@@ -211,14 +218,23 @@ export function StartupServices() {
               {busy === "wsearch" ? "…" : wsearch.enabled ? "Disable" : "Enable"}
             </button>
           </div>
+        ) : loading ? (
+          <p className="text-sm text-slate-500">Loading…</p>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Couldn't read the Windows Search service state.
+          </p>
         )}
       </Card>
 
       <Card title={`Scheduled Tasks (${tasks.length})`}>
-        {tasks.length === 0 ? (
+        {!isWindows ? (
           <p className="text-sm text-slate-500">
-            No scheduled tasks found (Windows-only enumeration).
+            Scheduled tasks are only enumerated on Windows; nothing is listed on
+            this platform.
           </p>
+        ) : tasks.length === 0 ? (
+          <p className="text-sm text-slate-500">No scheduled tasks found.</p>
         ) : (
           <ul className="max-h-72 divide-y divide-slate-800/60 overflow-y-auto">
             {tasks.map((t) => (
@@ -254,7 +270,12 @@ export function StartupServices() {
       </Card>
 
       <Card title="Startup Apps">
-        {startup.length === 0 ? (
+        {!isWindows ? (
+          <p className="text-sm text-slate-500">
+            Startup apps are only enumerated on Windows; nothing is listed on
+            this platform.
+          </p>
+        ) : startup.length === 0 ? (
           <p className="text-sm text-slate-500">No startup entries found.</p>
         ) : (
           <ul className="divide-y divide-slate-800/60">
@@ -288,93 +309,102 @@ export function StartupServices() {
       </Card>
 
       <Card
-        title={`Services (${visible.length} of ${services.length})`}
+        title={`Services${isWindows ? ` (${visible.length} of ${services.length})` : ""}`}
         action={
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.currentTarget.value)}
-                placeholder="Filter services…"
-                className="w-52 rounded-lg border border-slate-700 bg-slate-950 py-1.5 pl-7 pr-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none"
-              />
+          isWindows && (
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.currentTarget.value)}
+                  placeholder="Filter services…"
+                  className="w-52 rounded-lg border border-slate-700 bg-slate-950 py-1.5 pl-7 pr-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+              <select
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.currentTarget.value as ClassFilter)}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+              >
+                <option value="all">All</option>
+                <option value="required">Required</option>
+                <option value="safe">Safe</option>
+                <option value="unknown">Unknown</option>
+              </select>
             </div>
-            <select
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.currentTarget.value as ClassFilter)}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
-            >
-              <option value="all">All</option>
-              <option value="required">Required</option>
-              <option value="safe">Safe</option>
-              <option value="unknown">Unknown</option>
-            </select>
-          </div>
+          )
         }
       >
-        <ul className="max-h-[32rem] divide-y divide-slate-800/60 overflow-y-auto">
-          {visible.map((s) => (
-            <li key={s.name} className="cv-row flex items-center gap-3 py-2.5">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-slate-200">{s.displayName || s.name}</span>
-                  <Badge tone={stateTone(s.state)}>{s.state}</Badge>
-                  <Badge tone={classTone(s.classification)}>{s.classification}</Badge>
-                  {s.delayedAutoStart && <Badge tone="violet">delayed</Badge>}
+        {!isWindows ? (
+          <p className="text-sm text-slate-500">
+            Service enumeration and control are only available on Windows; nothing
+            is listed on this platform.
+          </p>
+        ) : (
+          <ul className="max-h-[32rem] divide-y divide-slate-800/60 overflow-y-auto">
+            {visible.map((s) => (
+              <li key={s.name} className="cv-row flex items-center gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-200">{s.displayName || s.name}</span>
+                    <Badge tone={stateTone(s.state)}>{s.state}</Badge>
+                    <Badge tone={classTone(s.classification)}>{s.classification}</Badge>
+                    {s.delayedAutoStart && <Badge tone="violet">delayed</Badge>}
+                  </div>
+                  <div className="truncate text-xs text-slate-500">
+                    {s.description && <span>{s.description} · </span>}
+                    <span className="font-mono">{s.binaryPath}</span>
+                  </div>
                 </div>
-                <div className="truncate text-xs text-slate-500">
-                  {s.description && <span>{s.description} · </span>}
-                  <span className="font-mono">{s.binaryPath}</span>
-                </div>
-              </div>
 
-              <select
-                value={s.startType}
-                disabled={s.isDriver || s.classification === "required" || busy === s.name}
-                onChange={(e) =>
-                  run(
-                    s.name,
-                    () => setServiceStartType(s.name, e.currentTarget.value),
-                    `Set ${s.name} start type to ${e.currentTarget.value}.`,
-                  )
-                }
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none disabled:opacity-40"
-              >
-                {!settableStartTypes.includes(s.startType) && (
-                  <option value={s.startType}>{s.startType}</option>
-                )}
-                {settableStartTypes.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-
-              {!s.isDriver && (
-                <button
-                  onClick={() =>
-                    s.state === "running"
-                      ? run(s.name, () => stopService(s.name), `Stopped ${s.name}.`)
-                      : run(s.name, () => startService(s.name), `Started ${s.name}.`)
+                <select
+                  value={s.startType}
+                  disabled={s.isDriver || s.classification === "required" || busy === s.name}
+                  onChange={(e) =>
+                    run(
+                      s.name,
+                      () => setServiceStartType(s.name, e.currentTarget.value),
+                      `Set ${s.name} start type to ${e.currentTarget.value}.`,
+                    )
                   }
-                  disabled={busy === s.name || (s.state === "running" && s.classification === "required")}
-                  className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-40"
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none disabled:opacity-40"
                 >
-                  {s.state === "running" ? (
-                    <>
-                      <Square className="h-3 w-3" /> Stop
-                    </>
-                  ) : (
-                    <>
-                      <Play className="h-3 w-3" /> Start
-                    </>
+                  {!settableStartTypes.includes(s.startType) && (
+                    <option value={s.startType}>{s.startType}</option>
                   )}
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+                  {settableStartTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+
+                {!s.isDriver && (
+                  <button
+                    onClick={() =>
+                      s.state === "running"
+                        ? run(s.name, () => stopService(s.name), `Stopped ${s.name}.`)
+                        : run(s.name, () => startService(s.name), `Started ${s.name}.`)
+                    }
+                    disabled={busy === s.name || (s.state === "running" && s.classification === "required")}
+                    className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-40"
+                  >
+                    {s.state === "running" ? (
+                      <>
+                        <Square className="h-3 w-3" /> Stop
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-3 w-3" /> Start
+                      </>
+                    )}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

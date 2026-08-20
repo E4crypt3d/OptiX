@@ -350,11 +350,6 @@ export interface NetworkStatus {
   currentDns: string[];
 }
 
-export interface TcpParameter {
-  name: string;
-  value: number | null;
-}
-
 export interface TcpTweak {
   name: string;
   description: string;

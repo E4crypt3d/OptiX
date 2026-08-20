@@ -55,15 +55,6 @@ pub struct NetworkStatus {
     pub current_dns: Vec<String>,
 }
 
-/// A single TCP/IP tuning parameter read from the registry.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TcpParameter {
-    pub name: String,
-    /// Current DWORD value, or `None` when the value is absent (driver default).
-    pub value: Option<u32>,
-}
-
 /// Result of applying DNS servers to an adapter.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,7 +99,7 @@ pub struct PingResult {
     pub min_ms: Option<f64>,
     pub median_ms: Option<f64>,
     pub max_ms: Option<f64>,
-    /// Mean absolute deviation between consecutive RTTs — the "jitter".
+    /// Median absolute deviation between consecutive RTTs — the "jitter".
     pub jitter_ms: Option<f64>,
     /// Every RTT in milliseconds, so the UI can render the series.
     pub samples_ms: Vec<f64>,

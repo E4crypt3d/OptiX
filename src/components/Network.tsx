@@ -24,6 +24,8 @@ function ms(v: number | null): string {
 }
 
 export function Network() {
+  const isWindows =
+    typeof navigator !== "undefined" && /windows|win32/i.test(navigator.userAgent);
   const [status, setStatus] = useState<NetworkStatus | null>(null);
   const [results, setResults] = useState<DnsBenchmarkResult[] | null>(null);
   const [tweaks, setTweaks] = useState<TcpTweak[]>([]);
@@ -336,27 +338,34 @@ export function Network() {
       <Card
         title="TCP/IP Tweaks (experimental)"
         action={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onApplyTweaks}
-              disabled={tweakBusy}
-              className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
-            >
-              <Zap className="h-3.5 w-3.5" />
-              Apply recommended
-            </button>
-            <button
-              onClick={onResetTweaks}
-              disabled={tweakBusy}
-              className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Revert to defaults
-            </button>
-          </div>
+          isWindows && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onApplyTweaks}
+                disabled={tweakBusy}
+                className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                Apply recommended
+              </button>
+              <button
+                onClick={onResetTweaks}
+                disabled={tweakBusy}
+                className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Revert to defaults
+              </button>
+            </div>
+          )
         }
       >
-        {tweaks.length === 0 ? (
+        {!isWindows ? (
+          <p className="text-sm text-slate-500">
+            TCP/IP registry tweaks are only available on Windows; nothing is
+            listed on this platform.
+          </p>
+        ) : tweaks.length === 0 ? (
           <p className="text-sm text-slate-500">
             No TCP parameters exposed (Windows-only).
           </p>
@@ -380,11 +389,13 @@ export function Network() {
             ))}
           </ul>
         )}
-        <p className="mt-3 text-xs text-slate-600">
-          These legacy registry tweaks are mostly placebo on modern Windows — real wins come
-          from DNS selection and a wired connection. Everything here is snapshot-first and
-          revertible in one click.
-        </p>
+        {isWindows && (
+          <p className="mt-3 text-xs text-slate-600">
+            These legacy registry tweaks are mostly placebo on modern Windows — real wins come
+            from DNS selection and a wired connection. Everything here is snapshot-first and
+            revertible in one click.
+          </p>
+        )}
       </Card>
     </div>
   );

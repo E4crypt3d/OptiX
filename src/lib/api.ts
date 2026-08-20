@@ -27,7 +27,6 @@ import type {
   CacheClearResult,
   DnsApplyResult,
   DnsBenchmarkResult,
-  DnsServer,
   GamingToggle,
   GpuAdapter,
   GpuToggleResult,
@@ -40,7 +39,6 @@ import type {
   StartupEntry,
   SystemStats,
   ScheduledTask,
-  TcpParameter,
   TcpTweak,
   TcpTweakResult,
   PingResult,
@@ -196,10 +194,6 @@ export function networkStatus(): Promise<NetworkStatus> {
   return invoke<NetworkStatus>("network_status");
 }
 
-export function listDnsServers(): Promise<DnsServer[]> {
-  return invoke<DnsServer[]>("list_dns_servers");
-}
-
 export function benchmarkDns(
   domains: string[],
   queriesPerDomain: number,
@@ -209,10 +203,6 @@ export function benchmarkDns(
 
 export function applyDns(guid: string, servers: string[]): Promise<DnsApplyResult> {
   return invoke<DnsApplyResult>("apply_dns", { guid, servers });
-}
-
-export function tcpParameters(): Promise<TcpParameter[]> {
-  return invoke<TcpParameter[]>("tcp_parameters");
 }
 
 export function listTcpTweaks(): Promise<TcpTweak[]> {

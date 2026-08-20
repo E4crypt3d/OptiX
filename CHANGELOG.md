@@ -5,6 +5,42 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-08-20
+
+### Added
+
+- **Parallel DNS benchmark**: resolvers are now probed on separate threads so
+  a slow or unreachable server does not stall the entire benchmark run.
+- **DNS apply validation**: rejects unknown adapter GUIDs and malformed server
+  lists (must be 1-4 valid IPv4 addresses) at the backend boundary before
+  any registry write.
+- **TCP tweak revert verification**: `reset_tcp_tweaks` now checks that the
+  registry deletion landed; on failure the previous value is restored and an
+  error is returned.
+- **Ping jitter improvement**: jitter is now computed as median absolute
+  deviation between consecutive RTTs, replacing the mean which is sensitive
+  to outliers.
+
+### Fixed
+
+- **DNS flush window flash**: `ipconfig /flushdns` now runs with
+  `CREATE_NO_WINDOW` to prevent a console window from briefly appearing in
+  the GUI application.
+
+### Removed
+
+- **Dead network commands**: removed `list_dns_servers` and
+  `tcp_parameters` commands, `TcpParameter` model, and their frontend
+  bindings — these were superseded by `benchmark_dns` and `list_tcp_tweaks`.
+
+### Changed
+
+- **Platform-aware Network page**: TCP/IP tweak action buttons are hidden on
+  non-Windows platforms; a read-only banner is shown instead.
+- **Platform-aware StartupServices page**: Windows Search, Scheduled Tasks,
+  and Services sections display platform-aware empty states instead of
+  generic "no entries" messages.
+
 ## [0.10.0] - 2026-08-20
 
 ### Added

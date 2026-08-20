@@ -1,7 +1,7 @@
 //! Windows network detection (adapters, DNS servers, default gateway, TCP/IP
 //! parameters) from the TCP/IP registry keys, plus a DNS cache flush.
 
-use crate::models::network::{NetworkAdapter, TcpParameter};
+use crate::models::network::NetworkAdapter;
 
 #[cfg(windows)]
 const TCPIP_INTERFACES: &str = r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces";
@@ -172,40 +172,6 @@ pub fn current_dns_servers() -> Vec<String> {
         .collect()
 }
 
-/// Current TCP/IP tuning parameters (read-only; experimental).
-#[cfg(windows)]
-pub fn tcp_parameters() -> Vec<TcpParameter> {
-    use winreg::enums::HKEY_LOCAL_MACHINE;
-    use winreg::RegKey;
-
-    const NAMES: &[&str] = &[
-        "TcpAckFrequency",
-        "TCPNoDelay",
-        "MaxUserPort",
-        "TcpTimedWaitDelay",
-        "DefaultTTL",
-        "Tcp1323Opts",
-        "TcpMaxDataRetransmissions",
-    ];
-    let Ok(key) = RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey(r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters")
-    else {
-        return Vec::new();
-    };
-    NAMES
-        .iter()
-        .map(|n| TcpParameter {
-            name: (*n).to_string(),
-            value: key.get_value::<u32, _>(n).ok(),
-        })
-        .collect()
-}
-
-#[cfg(not(windows))]
-pub fn tcp_parameters() -> Vec<TcpParameter> {
-    Vec::new()
-}
-
 /// Read a single TCP/IP parameter DWORD from the registry (`None` when absent
 /// or non-numeric, meaning the driver default applies).
 #[cfg(windows)]
@@ -227,7 +193,14 @@ pub fn tcp_value(_name: &str) -> Option<u32> {
 /// Flush the DNS resolver cache (best-effort; no-op off Windows).
 #[cfg(windows)]
 pub fn flush_dns() {
-    if let Err(e) = std::process::Command::new("ipconfig").arg("/flushdns").output() {
+    use std::os::windows::process::CommandExt;
+    // Spawn without a console window — a GUI app must not flash one.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    if let Err(e) = std::process::Command::new("ipconfig")
+        .arg("/flushdns")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
         crate::logging::warn(&format!("ipconfig /flushdns failed: {e}"));
     }
 }

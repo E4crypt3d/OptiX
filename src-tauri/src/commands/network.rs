@@ -4,8 +4,8 @@ use crate::db::sqlite::Database;
 use crate::engine::network;
 use crate::error::{OptixError, Result};
 use crate::models::network::{
-    DnsApplyResult, DnsBenchmarkResult, DnsServer, NetworkStatus, PingResult, TcpParameter,
-    TcpTweak, TcpTweakResult,
+    DnsApplyResult, DnsBenchmarkResult, DnsServer, NetworkStatus, PingResult, TcpTweak,
+    TcpTweakResult,
 };
 use crate::win;
 
@@ -45,12 +45,6 @@ pub fn network_status() -> NetworkStatus {
     network::status()
 }
 
-/// Resolvers offered for benchmarking/application.
-#[tauri::command]
-pub fn list_dns_servers() -> Vec<DnsServer> {
-    servers_with_current()
-}
-
 /// Benchmark resolvers (UDP A-record queries) on a blocking thread.
 #[tauri::command]
 pub async fn benchmark_dns(
@@ -77,12 +71,6 @@ pub fn apply_dns(
     servers: Vec<String>,
 ) -> Result<DnsApplyResult> {
     network::apply_dns(db.inner(), &guid, &servers)
-}
-
-/// Current TCP/IP tuning parameters (read-only; experimental).
-#[tauri::command]
-pub fn tcp_parameters() -> Vec<TcpParameter> {
-    win::network::tcp_parameters()
 }
 
 /// The tunable TCP/IP tweaks with current vs recommended state.
