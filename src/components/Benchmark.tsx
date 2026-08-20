@@ -31,6 +31,8 @@ function when(ts: number): string {
 }
 
 export function Benchmark() {
+  const isWindows =
+    typeof navigator !== "undefined" && /windows|win32/i.test(navigator.userAgent);
   const [runs, setRuns] = useState<BenchmarkResult[]>([]);
   const [games, setGames] = useState<Game[]>([]);
   const [loading, setLoading] = useState(false);
@@ -88,7 +90,9 @@ export function Benchmark() {
         `Captured ${r.frameCount} frames · avg ${fps(r.avgFps)} FPS · 1% low ${fps(r.p1Fps)} FPS.`,
       );
       await refresh();
-      if (r.id != null) await onChart(r.id);
+      // The fresh run already carries its series — chart it directly instead
+      // of re-reading the CSV.
+      if (r.id != null) await onChart(r.id, r.frameTimesMs.length > 0 ? r.frameTimesMs : undefined);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -113,14 +117,15 @@ export function Benchmark() {
     }
   }
 
-  async function onChart(id: number) {
+  async function onChart(id: number, times?: number[]) {
     const token = ++chartToken.current;
     setChartId(id);
     try {
-      const times = await benchmarkFrameTimes(id);
+      // A fresh run carries its series; history runs are re-read from CSV.
+      const msArr = times ?? (await benchmarkFrameTimes(id));
       // A full capture can hold tens of thousands of frames; decimate before
       // rendering so the chart stays responsive.
-      const points = times.map((ms, i) => ({ frame: i + 1, ms: Number(ms.toFixed(2)) }));
+      const points = msArr.map((ms, i) => ({ frame: i + 1, ms: Number(ms.toFixed(2)) }));
       if (chartToken.current !== token) return; // a newer chart was requested
       setChartData(decimateFrameTimes(points, 1500));
     } catch {
@@ -191,32 +196,36 @@ export function Benchmark() {
 
       <Card title="Run a Benchmark">
         <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs text-slate-400">
-            Game
-            <select
-              value={gameId}
-              onChange={(e) => setGameId(e.currentTarget.value === "" ? "" : Number(e.currentTarget.value))}
-              className="mt-1 block w-56 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
-            >
-              <option value="">Manual executable…</option>
-              {games.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isWindows && (
+            <>
+              <label className="text-xs text-slate-400">
+                Game
+                <select
+                  value={gameId}
+                  onChange={(e) => setGameId(e.currentTarget.value === "" ? "" : Number(e.currentTarget.value))}
+                  className="mt-1 block w-56 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+                >
+                  <option value="">Manual executable…</option>
+                  {games.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          {!selectedGame && (
-            <label className="text-xs text-slate-400">
-              Process name
-              <input
-                value={exeName}
-                onChange={(e) => setExeName(e.currentTarget.value)}
-                placeholder="cs2.exe"
-                className="mt-1 block w-52 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none"
-              />
-            </label>
+              {!selectedGame && (
+                <label className="text-xs text-slate-400">
+                  Process name
+                  <input
+                    value={exeName}
+                    onChange={(e) => setExeName(e.currentTarget.value)}
+                    placeholder="cs2.exe"
+                    className="mt-1 block w-52 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-xs text-slate-200 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none"
+                  />
+                </label>
+              )}
+            </>
           )}
 
           <label className="text-xs text-slate-400">
@@ -231,14 +240,16 @@ export function Benchmark() {
             />
           </label>
 
-          <button
-            onClick={onRunFps}
-            disabled={busy === "fps" || busy === "stress"}
-            className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
-          >
-            <Play className="h-3.5 w-3.5" />
-            {busy === "fps" ? "Capturing…" : "Start FPS capture"}
-          </button>
+          {isWindows && (
+            <button
+              onClick={onRunFps}
+              disabled={busy === "fps" || busy === "stress"}
+              className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {busy === "fps" ? "Capturing…" : "Start FPS capture"}
+            </button>
+          )}
           <button
             onClick={onRunStress}
             disabled={busy === "fps" || busy === "stress"}
@@ -249,8 +260,14 @@ export function Benchmark() {
           </button>
         </div>
         <p className="mt-3 text-xs text-slate-600">
-          FPS capture requires PresentMon64.exe (place it next to the Optix executable or on PATH).
-          Stress test measures CPU/RAM without PresentMon.
+          {isWindows ? (
+            <>
+              FPS capture requires PresentMon64.exe (place it next to the Optix executable or on
+              PATH). Stress test measures CPU/RAM without PresentMon.
+            </>
+          ) : (
+            "FPS capture (PresentMon) is Windows-only. The stress test measures CPU/RAM on this platform."
+          )}
         </p>
       </Card>
 

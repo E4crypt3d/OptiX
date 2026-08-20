@@ -5,6 +5,55 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-08-20
+
+### Added
+
+- **Log file in Settings**: the app-info block now shows the log file path,
+  noting that errors and warnings are written there so nothing fails silently.
+
+### Fixed
+
+- **DISM output deadlock**: DISM component cleanup drains stdout and stderr
+  on separate threads, so a child that fills its stderr pipe can no longer
+  block the operation.
+- **Benchmark capture cleanup**: PresentMon is resolved before sampling
+  starts, and a failed capture removes the partial CSV instead of leaving it
+  behind.
+- **Benchmark delete cleanup**: `delete_benchmark` also removes the run's
+  capture CSV (best-effort; a missing file is tolerated).
+- **PresentMon PATH lookup**: `find_presentmon` explicitly checks the
+  executable on `PATH`, so the UI's "or on PATH" guidance is accurate.
+- **PresentMon window flash**: `run_capture` uses `CREATE_NO_WINDOW` so a
+  capture doesn't flash a console for its duration.
+- **Crash-watch false new-alert burst**: the watcher's first poll only primes
+  the watermark, so crashes that pre-date app launch are never reported as
+  new.
+- **Event-log handle leak**: batched event handles are closed before
+  returning.
+- **Minidump memory spike**: crash-report zips stream minidumps via
+  `io::copy` instead of buffering up to 200 MB.
+- **Bottleneck rankings**: CPU/GPU bottleneck diagnostics analyze the newest
+  run (newest-first list), not the oldest.
+- **Disk-free diagnostic**: uses the worst fixed disk (removable media
+  excluded) instead of a cross-disk aggregate that could hide a nearly-full
+  system drive.
+
+### Changed
+
+- **Platform-aware Benchmark page**: FPS capture (game / process picker,
+  PresentMon) is hidden on non-Windows; the stress test remains
+  cross-platform.
+- **Platform-aware Crash Reports page**: read-only banner on non-Windows and
+  the scan control hidden.
+- **Linux cleanup safety and speed**: the current user's UID is read once per
+  directory walk and only current-user-owned files are candidates.
+- **Async frame-times**: `benchmark_frame_times` reads and parses the CSV off
+  the main thread.
+- **Cheap service query**: the Windows Update guard now uses a single
+  `service_running("wuauserv")` SCM query instead of a full service
+  enumeration.
+
 ## [0.13.0] - 2026-08-20
 
 ### Added

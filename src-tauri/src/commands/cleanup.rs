@@ -125,9 +125,7 @@ async fn dism_component_cleanup_windows(db: State<'_, Database>) -> Result<Strin
     {
         crate::logging::warn(&format!("system restore point skipped: {e}"));
     }
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::win::cleanup::run_dism_component_cleanup(&mut |_| {})
-    })
-    .await
-    .map_err(|e| OptixError::Other(e.to_string()))?
+    tauri::async_runtime::spawn_blocking(crate::win::cleanup::run_dism_component_cleanup)
+        .await
+        .map_err(|e| OptixError::Other(e.to_string()))?
 }

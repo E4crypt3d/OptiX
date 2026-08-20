@@ -260,17 +260,45 @@ fn collect(def: &CategoryDef) -> Vec<FileEntry> {
     out
 }
 
+/// The current user's UID, read once per directory walk — not once per file
+/// (`/proc/self/status` is comparatively expensive when a cache holds tens of
+/// thousands of entries).
+#[cfg(target_os = "linux")]
+fn current_uid() -> Option<u32> {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()?
+        .lines()
+        .find(|line| line.starts_with("Uid:"))?
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
 fn collect_dir(dir: &Path, out: &mut Vec<FileEntry>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
+    // Only files owned by the current user are cleaned on Linux (the shared
+    // /tmp and other users' files must never be touched).
+    #[cfg(target_os = "linux")]
+    let my_uid = current_uid();
     for entry in entries.flatten() {
         let Ok(ft) = entry.file_type() else {
             continue;
         };
         let path = entry.path();
-        if ft.is_symlink() || !owned_by_current_user(&entry) {
+        if ft.is_symlink() {
             continue;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let owned = my_uid
+                .is_some_and(|uid| entry.metadata().map(|m| m.uid() == uid).unwrap_or(false));
+            if !owned {
+                continue;
+            }
         }
         if ft.is_dir() {
             if !is_protected(&path) {
@@ -286,35 +314,6 @@ fn collect_dir(dir: &Path, out: &mut Vec<FileEntry>) {
             }
         }
     }
-}
-
-#[cfg(target_os = "linux")]
-fn owned_by_current_user(entry: &fs::DirEntry) -> bool {
-    use std::os::unix::fs::MetadataExt;
-
-    let Some(uid) = std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|status| {
-            status
-                .lines()
-                .find(|line| line.starts_with("Uid:"))
-                .and_then(|line| line.split_whitespace().nth(1))
-                .and_then(|value| value.parse::<u32>().ok())
-        })
-    else {
-        return false;
-    };
-    entry.metadata().map(|metadata| metadata.uid() == uid).unwrap_or(false)
-}
-
-#[cfg(all(unix, not(target_os = "linux")))]
-fn owned_by_current_user(_entry: &fs::DirEntry) -> bool {
-    true
-}
-
-#[cfg(not(unix))]
-fn owned_by_current_user(_entry: &fs::DirEntry) -> bool {
-    true
 }
 
 fn apply_policy(entries: &[FileEntry], policy: Policy) -> Vec<&FileEntry> {

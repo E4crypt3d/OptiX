@@ -60,22 +60,36 @@ pub fn list_benchmarks(db: State<'_, Database>) -> Result<Vec<BenchmarkResult>> 
     db.list_benchmarks()
 }
 
-/// Delete a benchmark run.
+/// Delete a benchmark run and its capture CSV.
 #[tauri::command]
 pub fn delete_benchmark(db: State<'_, Database>, id: i64) -> Result<()> {
-    db.delete_benchmark(id)
+    let run = db.get_benchmark(id)?;
+    db.delete_benchmark(id)?;
+    if let Some(path) = run.and_then(|r| r.csv_path) {
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                crate::logging::warn(&format!("failed to remove capture CSV {path}: {e}"));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Re-load a run's frame-time series from its saved CSV (for charting).
+/// File read + parse runs off the main thread.
 #[tauri::command]
-pub fn benchmark_frame_times(db: State<'_, Database>, id: i64) -> Result<Vec<f64>> {
+pub async fn benchmark_frame_times(db: State<'_, Database>, id: i64) -> Result<Vec<f64>> {
     let run = db
         .get_benchmark(id)?
         .ok_or_else(|| OptixError::InvalidState(format!("benchmark {id} not found")))?;
     let Some(path) = run.csv_path else {
         return Ok(Vec::new());
     };
-    let text = std::fs::read_to_string(&path)?;
-    let parsed = benchmark::parse_presentmon_csv(&text).map_err(OptixError::Other)?;
-    Ok(parsed.frame_times_ms)
+    tauri::async_runtime::spawn_blocking(move || {
+        let text = std::fs::read_to_string(&path)?;
+        let parsed = benchmark::parse_presentmon_csv(&text).map_err(OptixError::Other)?;
+        Ok::<Vec<f64>, OptixError>(parsed.frame_times_ms)
+    })
+    .await
+    .map_err(|e| OptixError::Other(e.to_string()))?
 }

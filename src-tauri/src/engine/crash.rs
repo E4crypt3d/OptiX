@@ -472,42 +472,49 @@ pub struct CrashAlert {
     pub exception_code: String,
 }
 
+/// Compute the alert payload for events newer than `last_seen`. Empty before
+/// the first poll (`primed == false`), so crashes that pre-date the app's
+/// launch are never reported as "new".
+fn alerts_for(events: &[EventInfo], last_seen: i64, primed: bool) -> Vec<CrashAlert> {
+    if !primed {
+        return Vec::new();
+    }
+    events
+        .iter()
+        .filter(|e| e.detected_at_ms > last_seen)
+        .map(|e| CrashAlert {
+            detected_at_ms: e.detected_at_ms,
+            app: e.app.clone(),
+            pid: e.pid,
+            event_id: Some(e.event_id),
+            module: e.module.clone(),
+            exception_code: e.exception_code.clone(),
+        })
+        .collect()
+}
+
 /// Spawn a background thread that polls the Application event log for crash
 /// events every `interval` seconds and emits `optix://crash-detected` when new
 /// crashes appear. The frontend subscribes to that event to refresh the Crash
 /// Reports page live. Best-effort: event-log reads are cheap and the thread
-/// simply sleeps through failures.
+/// simply sleeps through failures. The first poll only primes the watermark.
 pub fn spawn_crash_watch(app: tauri::AppHandle, interval_secs: u64) {
     use tauri::Emitter;
 
     std::thread::spawn(move || {
         let interval = std::time::Duration::from_secs(interval_secs.max(5));
         let mut last_seen: i64 = 0;
-        let mut first = true;
+        let mut primed = false;
         loop {
             let events = win::crash::query_application_events(50);
             let newest = events.iter().map(|e| e.detected_at_ms).max().unwrap_or(0);
-            if !events.is_empty() && (first || newest > last_seen) {
-                // Only alert on the newly-observed events.
-                let alerts: Vec<CrashAlert> = events
-                    .iter()
-                    .filter(|e| first || e.detected_at_ms > last_seen)
-                    .map(|e| CrashAlert {
-                        detected_at_ms: e.detected_at_ms,
-                        app: e.app.clone(),
-                        pid: e.pid,
-                        event_id: Some(e.event_id),
-                        module: e.module.clone(),
-                        exception_code: e.exception_code.clone(),
-                    })
-                    .collect();
-                if !alerts.is_empty() {
-                    if let Err(e) = app.emit("optix://crash-detected", &alerts) {
-                        crate::logging::warn(&format!("crash event emit failed: {e}"));
-                    }
+            let alerts = alerts_for(&events, last_seen, primed);
+            if !alerts.is_empty() {
+                if let Err(e) = app.emit("optix://crash-detected", &alerts) {
+                    crate::logging::warn(&format!("crash event emit failed: {e}"));
                 }
             }
-            first = false;
+            primed = true;
             last_seen = newest;
             std::thread::sleep(interval);
         }
@@ -557,13 +564,14 @@ fn generate_report_zip_to(crash: &CrashReport, out_dir: &Path) -> Result<String>
         if too_big {
             zip.start_file("minidump_skipped.txt", opts())?;
             zip.write_all(b"The minidump exceeded the 200 MB cap and was not included.")?;
-        } else if let Ok(data) = std::fs::read(dmp) {
+        } else if let Ok(mut data) = std::fs::File::open(dmp) {
             let fname = Path::new(dmp)
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "minidump.dmp".into());
             zip.start_file(fname, opts())?;
-            zip.write_all(&data)?;
+            // Stream instead of buffering up to 200 MB in memory.
+            std::io::copy(&mut data, &mut zip)?;
         }
     }
 
@@ -657,8 +665,35 @@ Sig[5].Value=c0000005
     }
 
     #[test]
+    fn crash_watch_primes_before_alerting() {
+        let ev = |t: i64| EventInfo {
+            event_id: 1000,
+            app: "a.exe".into(),
+            pid: None,
+            module: "m.dll".into(),
+            exception_code: "c0000005".into(),
+            detected_at_ms: t,
+        };
+        let events = vec![ev(2000), ev(1000)];
+        // First poll only primes the watermark — no false "new crash" burst.
+        assert!(alerts_for(&events, 0, false).is_empty());
+        // Nothing newer than the watermark → no alerts.
+        assert!(alerts_for(&events, 2000, true).is_empty());
+        // Only events strictly newer than the watermark are reported.
+        let alerts = alerts_for(&events, 1000, true);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0].detected_at_ms, 2000);
+        assert_eq!(alerts[0].app, "a.exe");
+    }
+
+    #[test]
     fn generates_a_valid_zip() {
         let dir = std::env::temp_dir().join(format!("optix_crash_test_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wer = dir.join("Report.wer");
+        std::fs::write(&wer, "Version=1\nEventType=APPCRASH\n").unwrap();
+        let dmp = dir.join("game.exe.1234.dmp");
+        std::fs::write(&dmp, vec![0u8; 32]).unwrap();
         let crash = CrashReport {
             detected_at: 0,
             app: "cs2.exe".into(),
@@ -669,15 +704,18 @@ Sig[5].Value=c0000005
             exception_name: Some("Access violation".into()),
             severity: "high".into(),
             recommendation: "update drivers".into(),
-            wer_report_path: None,
-            minidump_path: None,
+            wer_report_path: Some(wer.to_string_lossy().into_owned()),
+            minidump_path: Some(dmp.to_string_lossy().into_owned()),
             report_zip_path: None,
             source: "event_log".into(),
         };
         let path = generate_report_zip_to(&crash, &dir).unwrap();
         assert!(Path::new(&path).is_file());
         let archive = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
-        assert!(archive.file_names().any(|n| n == "summary.json"));
+        let names: Vec<&str> = archive.file_names().collect();
+        assert!(names.contains(&"summary.json"));
+        assert!(names.contains(&"Report.wer"));
+        assert!(names.contains(&"game.exe.1234.dmp"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

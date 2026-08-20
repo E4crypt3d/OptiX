@@ -4,6 +4,9 @@
 
 use crate::error::{OptixError, Result};
 
+#[cfg(windows)]
+use std::io::{BufRead, BufReader};
+
 /// Total bytes + item count currently in the Recycle Bin.
 #[cfg(windows)]
 pub fn recycle_bin_size() -> (u64, u64) {
@@ -51,10 +54,11 @@ pub fn empty_recycle_bin() -> Result<()> {
 }
 
 /// Run `dism /online /cleanup-image /startcomponentcleanup` (admin required).
-/// Blocks, streaming output to `on_line`; returns the full output for the UI.
+/// Blocks until dism exits and returns its full output for the UI. Both stdout
+/// and stderr are drained on threads — reading only stdout while the child
+/// fills the stderr pipe would deadlock once the pipe buffer fills.
 #[cfg(windows)]
-pub fn run_dism_component_cleanup(on_line: &mut impl FnMut(&str)) -> Result<String> {
-    use std::io::{BufRead, BufReader};
+pub fn run_dism_component_cleanup() -> Result<String> {
     use std::process::Command;
 
     let mut child = Command::new("dism.exe")
@@ -64,18 +68,24 @@ pub fn run_dism_component_cleanup(on_line: &mut impl FnMut(&str)) -> Result<Stri
         .spawn()
         .map_err(|e| OptixError::Windows(format!("cannot start dism.exe: {e}")))?;
 
-    let mut out = String::new();
-    let mut drain = |pipe: std::process::ChildStdout| {
-        let reader = BufReader::new(pipe);
-        for line in reader.lines().map_while(std::io::Result::ok) {
-            on_line(line.trim());
-            out.push_str(line.trim());
-            out.push('\n');
-        }
-    };
+    let mut drains = Vec::new();
     if let Some(stdout) = child.stdout.take() {
-        drain(stdout);
+        drains.push(std::thread::spawn(move || drain_lines(stdout)));
     }
+    if let Some(stderr) = child.stderr.take() {
+        drains.push(std::thread::spawn(move || drain_lines(stderr)));
+    }
+
+    let mut out = String::new();
+    for drain in drains {
+        if let Ok(mut lines) = drain.join() {
+            for line in lines.drain(..) {
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+    }
+
     let status = child
         .wait()
         .map_err(|e| OptixError::Windows(format!("dism.exe wait failed: {e}")))?;
@@ -85,18 +95,28 @@ pub fn run_dism_component_cleanup(on_line: &mut impl FnMut(&str)) -> Result<Stri
     Ok(out)
 }
 
+/// Read a child pipe to EOF, returning its trimmed lines.
+#[cfg(windows)]
+fn drain_lines<R: std::io::Read>(pipe: R) -> Vec<String> {
+    let reader = BufReader::new(pipe);
+    reader
+        .lines()
+        .map_while(std::io::Result::ok)
+        .map(|line| line.trim().to_string())
+        .collect()
+}
+
 #[cfg(not(windows))]
-pub fn run_dism_component_cleanup(_on_line: &mut impl FnMut(&str)) -> Result<String> {
+pub fn run_dism_component_cleanup() -> Result<String> {
     Err(OptixError::UnsupportedPlatform("DISM component cleanup".into()))
 }
 
 /// Whether the Windows Update service (`wuauserv`) is currently running, in
-/// which case SoftwareDistribution cleanup should be skipped.
+/// which case SoftwareDistribution cleanup should be skipped. A single SCM
+/// query — not a full service enumeration (this runs on every cleanup scan).
 #[cfg(windows)]
 pub fn update_service_busy() -> bool {
-    crate::win::services::list_services()
-        .iter()
-        .any(|s| s.name.eq_ignore_ascii_case("wuauserv") && s.state == "running")
+    crate::win::services::service_running("wuauserv")
 }
 
 #[cfg(not(windows))]

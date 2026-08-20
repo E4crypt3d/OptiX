@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Database, FolderClock, ShieldCheck, Zap } from "lucide-react";
+import { Database, FileText, FolderClock, ShieldCheck, Zap } from "lucide-react";
 import { getAppInfo } from "../lib/api";
 import { errMsg } from "../lib/errors";
 import type { AppInfo } from "../lib/types";
@@ -53,6 +53,16 @@ export function Settings() {
               <dd className="truncate font-mono text-xs text-slate-300">{info?.dataDir ?? "…"}</dd>
               <dt className="mt-2 text-xs uppercase tracking-wider text-slate-500">Snapshots</dt>
               <dd className="truncate font-mono text-xs text-slate-300">{info?.snapshotsDir ?? "…"}</dd>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 sm:col-span-2">
+            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <div className="min-w-0">
+              <dt className="text-xs uppercase tracking-wider text-slate-500">Log file</dt>
+              <dd className="truncate font-mono text-xs text-slate-300">{info?.logPath || "…"}</dd>
+              <p className="mt-1 text-xs text-slate-600">
+                Errors and warnings are written here — nothing fails silently.
+              </p>
             </div>
           </div>
         </dl>

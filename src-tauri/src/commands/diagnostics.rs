@@ -56,18 +56,21 @@ fn collect_input(benchmarks: Vec<BenchmarkSnapshot>) -> DiagnosticInput {
         })
         .collect();
 
+    // The relevant signal is the worst fixed disk: removable media (USB
+    // sticks) and empty secondary drives would dilute an aggregate across all
+    // disks and hide a nearly-full system drive.
     let disks = Disks::new_with_refreshed_list();
-    let mut used = 0u64;
-    let mut total = 0u64;
-    for d in disks.list() {
-        used += d.total_space().saturating_sub(d.available_space());
-        total += d.total_space();
-    }
-    let disk_free_percent = if total > 0 {
-        Some((total.saturating_sub(used)) as f32 / total as f32 * 100.0)
-    } else {
-        None
-    };
+    let disk_free_percent = disks
+        .list()
+        .iter()
+        .filter(|d| !d.is_removable())
+        .filter_map(|d| {
+            let total = d.total_space();
+            (total > 0).then(|| {
+                (total.saturating_sub(d.available_space())) as f32 / total as f32 * 100.0
+            })
+        })
+        .min_by(|a, b| a.total_cmp(b));
 
     let temperatures: Vec<(String, f32)> = Components::new_with_refreshed_list()
         .iter()

@@ -91,6 +91,12 @@ pub fn query_application_events(max: usize) -> Vec<EventInfo> {
                 if let Some(info) = parse_event_xml(&xml) {
                     out.push(info);
                     if out.len() >= max {
+                        // Close every handle in this batch (including the one
+                        // we just consumed) before returning — event handles
+                        // are kernel objects and must not be leaked.
+                        for j in i..returned as usize {
+                            unsafe { evt::EvtClose(buffer[j]) };
+                        }
                         unsafe { evt::EvtClose(resultset) };
                         return out;
                     }

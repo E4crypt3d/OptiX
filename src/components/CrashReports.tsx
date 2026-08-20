@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bug, FileArchive, RefreshCw } from "lucide-react";
+import { AlertTriangle, Bug, FileArchive, RefreshCw, ShieldCheck } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { generateCrashReport, scanCrashes } from "../lib/api";
 import type { CrashReport } from "../lib/types";
@@ -24,6 +24,8 @@ function when(ts: number): string {
 }
 
 export function CrashReports() {
+  const isWindows =
+    typeof navigator !== "undefined" && /windows|win32/i.test(navigator.userAgent);
   const [crashes, setCrashes] = useState<CrashReport[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -99,14 +101,16 @@ export function CrashReports() {
             Application and driver crashes from the event log, WER, and minidumps.
           </p>
         </div>
-        <button
-          onClick={refresh}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Scan now
-        </button>
+        {isWindows && (
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Scan now
+          </button>
+        )}
       </header>
 
       {error && (
@@ -120,7 +124,15 @@ export function CrashReports() {
         </div>
       )}
 
-      {perApp.length > 0 && (
+      {!isWindows && (
+        <div className="flex items-start gap-2 rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3 text-sm text-slate-500">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          Crash detection reads the Windows Event Log, WER reports, and minidumps — it's only
+          available on Windows. This page is read-only on this platform.
+        </div>
+      )}
+
+      {isWindows && perApp.length > 0 && (
         <Card title={`Crash Summary (${crashes.length} total)`}>
           <ul className="flex flex-wrap gap-2">
             {perApp.map(([app, count]) => (
@@ -138,8 +150,12 @@ export function CrashReports() {
         </Card>
       )}
 
-      <Card title={`Timeline (${crashes.length})`}>
-        {crashes.length === 0 ? (
+      <Card title={`Timeline${isWindows ? ` (${crashes.length})` : ""}`}>
+        {!isWindows ? (
+          <p className="text-sm text-slate-500">
+            No crash data is available on this platform.
+          </p>
+        ) : crashes.length === 0 ? (
           <p className="text-sm text-slate-500">No crashes detected. Scan to check the event log.</p>
         ) : (
           <ul className="divide-y divide-slate-800/60">

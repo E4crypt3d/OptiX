@@ -227,22 +227,29 @@ pub fn capture_and_analyze(
     game_id: Option<i64>,
     game_name: Option<String>,
 ) -> Result<BenchmarkResult> {
-    let csv = benchmark_csv_path()?;
-    let started_at = super::now_ms() as i64;
-
-    let sampler = std::thread::spawn(move || sample_session(duration_secs));
-
+    // Resolve PresentMon before spawning the sampler: a missing binary or a
+    // failed capture must not leave the sampler thread sampling for the full
+    // duration.
     let presentmon = win::presentmon::find_presentmon().ok_or_else(|| {
         OptixError::InvalidState(
             "PresentMon64.exe not found. Place it next to the Optix executable or add it to PATH."
                 .into(),
         )
     })?;
-    win::presentmon::run_capture(&presentmon, exe_name, duration_secs, &csv)?;
 
+    let csv = benchmark_csv_path()?;
+    let started_at = super::now_ms() as i64;
+
+    let sampler = std::thread::spawn(move || sample_session(duration_secs));
+    let capture = win::presentmon::run_capture(&presentmon, exe_name, duration_secs, &csv);
     let (cpu_avg, ram_avg) = sampler
         .join()
         .map_err(|_| OptixError::Other("sampler thread panicked".into()))?;
+    if let Err(e) = capture {
+        // Best-effort cleanup of a partial capture; the error is what matters.
+        let _ = std::fs::remove_file(&csv);
+        return Err(e);
+    }
 
     let text = std::fs::read_to_string(&csv)?;
     let parsed = parse_presentmon_csv(&text).map_err(OptixError::Other)?;

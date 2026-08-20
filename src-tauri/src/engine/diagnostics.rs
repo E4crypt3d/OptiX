@@ -80,7 +80,8 @@ fn diag(
 }
 
 /// Run every rule and return findings ranked by severity then confidence.
-pub fn diagnose(input: &DiagnosticInput) -> Vec<Diagnostic> {    let mut out = Vec::new();
+pub fn diagnose(input: &DiagnosticInput) -> Vec<Diagnostic> {
+    let mut out = Vec::new();
     if let Some(d) = memory_pressure(input) {
         out.push(d);
     }
@@ -101,7 +102,8 @@ pub fn diagnose(input: &DiagnosticInput) -> Vec<Diagnostic> {    let mut out = V
     }
     if let Some(d) = gpu_bottleneck(input) {
         out.push(d);
-    }    if let Some(d) = driver_crash(input) {
+    }
+    if let Some(d) = driver_crash(input) {
         out.push(d);
     }
     if let Some(d) = thermal(input) {
@@ -115,7 +117,7 @@ pub fn diagnose(input: &DiagnosticInput) -> Vec<Diagnostic> {    let mut out = V
     }
     if let Some(d) = background_apps(input) {
         out.push(d);
-}
+    }
     out.sort_by(|a, b| {
         severity_rank(&b.severity)
             .cmp(&severity_rank(&a.severity))
@@ -235,7 +237,9 @@ fn updater(input: &DiagnosticInput) -> Option<Diagnostic> {
 }
 
 fn cpu_bottleneck(input: &DiagnosticInput) -> Option<Diagnostic> {
-    let b = input.benchmarks.last()?;
+    // `benchmarks` is newest-first (list_benchmarks is ORDER BY id DESC), so
+    // the newest run is the first entry.
+    let b = input.benchmarks.first()?;
     let (fps, cpu) = (b.avg_fps?, b.cpu_avg?);
     if fps >= 60.0 || cpu < 85.0 {
         return None;
@@ -256,7 +260,8 @@ fn cpu_bottleneck(input: &DiagnosticInput) -> Option<Diagnostic> {
 }
 
 fn gpu_bottleneck(input: &DiagnosticInput) -> Option<Diagnostic> {
-    let b = input.benchmarks.last()?;
+    // Newest run first (see `cpu_bottleneck`).
+    let b = input.benchmarks.first()?;
     let (fps, cpu, gpu) = (b.avg_fps?, b.cpu_avg?, b.gpu_avg?);
     if fps >= 60.0 || gpu < 90.0 || cpu > 70.0 {
         return None;
@@ -430,6 +435,25 @@ mod tests {
         });
         let d = diagnose(&i);
         assert!(d.iter().any(|x| x.id == "cpu_bottleneck"));
+    }
+
+    #[test]
+    fn bottleneck_rules_use_the_newest_benchmark() {
+        // list_benchmarks returns newest first, so the rules must analyze the
+        // first entry — the second (older) run would trip the rule here.
+        let mut i = input();
+        i.benchmarks.push(BenchmarkSnapshot {
+            avg_fps: Some(120.0),
+            cpu_avg: Some(50.0),
+            gpu_avg: Some(80.0),
+        });
+        i.benchmarks.push(BenchmarkSnapshot {
+            avg_fps: Some(45.0),
+            cpu_avg: Some(95.0),
+            gpu_avg: Some(50.0),
+        });
+        let d = diagnose(&i);
+        assert!(!d.iter().any(|x| x.id == "cpu_bottleneck"));
     }
 
     #[test]

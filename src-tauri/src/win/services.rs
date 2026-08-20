@@ -145,6 +145,39 @@ fn enrich(name: &str, display_name: &str, state: u32) -> ServiceInfo {
     info
 }
 
+/// Cheap "is this service currently running?" check — a single SCM query,
+/// not a full enumeration (used by cleanup's Windows Update guard).
+#[cfg(windows)]
+pub fn service_running(name: &str) -> bool {
+    use windows_sys::Win32::System::Services::{
+        CloseServiceHandle, OpenSCManagerW, OpenServiceW, QueryServiceStatus,
+        SC_MANAGER_CONNECT, SERVICE_QUERY_STATUS, SERVICE_RUNNING, SERVICE_STATUS,
+    };
+
+    let scm = unsafe { OpenSCManagerW(std::ptr::null(), std::ptr::null(), SC_MANAGER_CONNECT) };
+    if scm.is_null() {
+        return false;
+    }
+    let wide = to_wide(name);
+    let handle = unsafe { OpenServiceW(scm, wide.as_ptr(), SERVICE_QUERY_STATUS) };
+    if handle.is_null() {
+        unsafe { CloseServiceHandle(scm) };
+        return false;
+    }
+    let mut status: SERVICE_STATUS = unsafe { std::mem::zeroed() };
+    let ok = unsafe { QueryServiceStatus(handle, &mut status) };
+    unsafe {
+        CloseServiceHandle(handle);
+        CloseServiceHandle(scm);
+    }
+    ok != 0 && status.dwCurrentState == SERVICE_RUNNING
+}
+
+#[cfg(not(windows))]
+pub fn service_running(_name: &str) -> bool {
+    false
+}
+
 /// Start a service by name.
 #[cfg(windows)]
 pub fn start_service(name: &str) -> Result<()> {

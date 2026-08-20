@@ -27,12 +27,16 @@ pub fn find_presentmon() -> Option<String> {
                 .join("PresentMon64.exe"),
         );
     }
-    candidates.push(PathBuf::from("PresentMon64.exe")); // PATH lookup via Command
+    if let Some(found) = candidates.into_iter().find(|p| p.is_file()) {
+        return Some(found.to_string_lossy().into_owned());
+    }
 
-    candidates
-        .into_iter()
-        .find(|p| p.is_absolute() && p.is_file())
-        .map(|p| p.to_string_lossy().into_owned())
+    // Bare name resolves through PATH when spawned via `Command::new` — check
+    // it explicitly so "or on PATH" in the UI is actually true.
+    let on_path = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).any(|d| d.join("PresentMon64.exe").is_file()))
+        .unwrap_or(false);
+    on_path.then(|| "PresentMon64.exe".to_string())
 }
 
 #[cfg(not(windows))]
@@ -44,8 +48,12 @@ pub fn find_presentmon() -> Option<String> {
 /// Blocks for the capture duration.
 #[cfg(windows)]
 pub fn run_capture(binary: &str, process_name: &str, duration_secs: u64, output: &str) -> Result<()> {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
 
+    // PresentMon is a console binary; spawn without a window so a capture
+    // doesn't flash a console for its whole duration.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let result = Command::new(binary)
         .args([
             "-process_name",
@@ -56,6 +64,7 @@ pub fn run_capture(binary: &str, process_name: &str, duration_secs: u64, output:
             &duration_secs.to_string(),
             "-stop_existing_session",
         ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output();
 
     match result {
