@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "build:win": "tauri build --bundles nsis,msi",
-    "build:nsis": "tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis",
+    "build:nsis": "tauri build --target x86_64-pc-windows-gnu --bundles nsis",
     "build:linux": "tauri build --bundles deb,appimage"
   },
   "dependencies": {
