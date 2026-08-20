@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use serde_json::{json, Value};
 
 use crate::db::sqlite::{snapshots_dir, Database};
+use crate::engine::snapshot::validate_snapshot_id;
 use crate::error::{OptixError, Result};
 use crate::models::snapshot::ChangeRecord;
 
@@ -29,6 +30,7 @@ pub fn record_change(
 
 /// Load a snapshot's changes, validating that the snapshot exists.
 pub fn load(db: &Database, snapshot_id: &str) -> Result<Vec<ChangeRecord>> {
+    validate_snapshot_id(snapshot_id)?;
     db.get_snapshot(snapshot_id)?
         .ok_or_else(|| OptixError::InvalidState(format!("snapshot {snapshot_id} not found")))?;
     db.list_changes(snapshot_id)
@@ -116,6 +118,7 @@ fn rollback_change(change: &ChangeRecord) -> Result<RollbackOutcome> {
 /// Structural diff of two snapshots' JSON files.
 pub fn diff(db: &Database, a: &str, b: &str) -> Result<Value> {
     for id in [a, b] {
+        validate_snapshot_id(id)?;
         if db.get_snapshot(id)?.is_none() {
             return Err(OptixError::InvalidState(format!("snapshot {id} not found")));
         }
@@ -189,6 +192,19 @@ fn diff_into(a: &Value, b: &Value, path: &str, out: &mut Vec<Value>) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn rejects_path_traversal_ids() {
+        for bad in ["../etc/passwd", "a/../b", "..", "a\\b", ""] {
+            assert!(
+                validate_snapshot_id(bad).is_err(),
+                "id {bad:?} should be rejected"
+            );
+        }
+        // A real UUID-shaped id (the only kind the app generates) passes.
+        assert!(validate_snapshot_id("3f1d2e8a-9c4b-4f6a-8e2b-1a2b3c4d5e6f").is_ok());
+        assert!(validate_snapshot_id("s1").is_ok());
+    }
 
     #[test]
     fn diff_detects_changes() {

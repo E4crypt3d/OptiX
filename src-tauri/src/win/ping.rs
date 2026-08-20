@@ -71,8 +71,19 @@ pub fn ping_host(host: &str, count: u32, timeout_ms: u32) -> Result<Vec<f64>> {
     use std::process::Command;
 
     let count = count.min(64).max(1);
+    // `--` stops option parsing so a host starting with `-` is treated as a
+    // target, not a flag (the host string comes from the frontend).
     let output = Command::new("ping")
-        .args(["-c", &count.to_string(), "-W", &(timeout_ms.clamp(1, 10).to_string()), "-i", "0.2", host])
+        .args([
+            "-c",
+            &count.to_string(),
+            "-W",
+            &timeout_ms.clamp(1, 10).to_string(),
+            "-i",
+            "0.2",
+            "--",
+            host,
+        ])
         .output()
         .map_err(|e| OptixError::Other(format!("cannot run ping: {e}")))?;
 

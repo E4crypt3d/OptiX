@@ -50,6 +50,7 @@ pub fn run() {
             commands::system::record_sample,
             commands::system::recent_samples,
             commands::system::app_info,
+            commands::system::log_event,
             commands::snapshot::create_snapshot,
             commands::snapshot::list_snapshots,
             commands::snapshot::list_changes,

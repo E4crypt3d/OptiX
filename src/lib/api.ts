@@ -61,6 +61,10 @@ export function recordSample(): Promise<void> {
   return invoke<void>("record_sample");
 }
 
+export function logEvent(level: "info" | "warn" | "error", message: string): Promise<void> {
+  return invoke<void>("log_event", { level, message });
+}
+
 export function recentSamples(): Promise<HardwareSample[]> {
   return invoke<HardwareSample[]>("recent_samples");
 }

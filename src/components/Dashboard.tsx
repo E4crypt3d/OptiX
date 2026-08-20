@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { REDUCED_MOTION, useSmoothValue } from "../lib/smooth";
 import { useInterval } from "../lib/useInterval";
 import {
   Activity,
@@ -20,6 +21,7 @@ import {
   YAxis,
 } from "recharts";
 import { recordSample, recentSamples, scanSystem, systemStats } from "../lib/api";
+import { errMsg } from "../lib/errors";
 import { formatBytes, formatFrequency, formatRate, formatUptime } from "../lib/format";
 import type { HardwareInfo, HardwareSample, SystemStats } from "../lib/types";
 import { Badge, Card, ProgressBar, Stat } from "./ui";
@@ -69,6 +71,15 @@ export function Dashboard() {
   const [scanLoading, setScanLoading] = useState(false);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>(sharedHistory);
+  // Guards in-flight polls from setting state after the view unmounts.
+  const alive = useRef(true);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,7 +93,7 @@ export function Dashboard() {
       })
       .catch((e) => {
         console.error(e);
-        if (!cancelled) setScanError(String(e));
+        if (!cancelled) setScanError(errMsg(e));
       });
 
     // Backfill the chart from persisted samples when there's no live history
@@ -117,6 +128,7 @@ export function Dashboard() {
   async function poll() {
     try {
       const next = await systemStats();
+      if (!alive.current) return;
       setStats(next);
       const point: HistoryPoint = {
         time: new Date(next.timestampMs).toLocaleTimeString(),
@@ -130,7 +142,9 @@ export function Dashboard() {
     }
   }
 
-  useInterval(() => void poll(), 1500);
+  // 1 Hz sampling — cheap backend work (sysinfo refresh + network deltas) —
+  // while the smooth value components interpolate between ticks at 60 fps.
+  useInterval(() => void poll(), 1000);
 
   async function rescanInfo() {
     setScanLoading(true);
@@ -139,7 +153,7 @@ export function Dashboard() {
       setInfo(await loadInfo(true));
     } catch (e) {
       console.error(e);
-      setScanError(String(e));
+      setScanError(errMsg(e));
     } finally {
       setScanLoading(false);
     }
@@ -148,8 +162,8 @@ export function Dashboard() {
   const cpu = stats?.cpuUsagePercent;
   const mem = stats?.memory ?? info?.memory;
   // Rates are computed in the backend from refresh-window byte deltas.
-  const down = stats?.network.reduce((a, n) => a + n.receivedBytesPerSec, 0) ?? 0;
-  const up = stats?.network.reduce((a, n) => a + n.transmittedBytesPerSec, 0) ?? 0;
+  const down = stats ? stats.network.reduce((a, n) => a + n.receivedBytesPerSec, 0) : null;
+  const up = stats ? stats.network.reduce((a, n) => a + n.transmittedBytesPerSec, 0) : null;
   const uptimeSeconds = info
     ? info.os.uptimeSeconds + Math.max(0, (Date.now() - info.scannedAtMs) / 1000)
     : 0;
@@ -185,11 +199,11 @@ export function Dashboard() {
             onClick={() => {
               setScanError(null);
               loadInfo(true)
-                .then(setInfo)
-                .catch((e) => {
-                  console.error(e);
-                  setScanError(String(e));
-                });
+              .then(setInfo)
+              .catch((e) => {
+                console.error(e);
+                setScanError(errMsg(e));
+              });
             }}
             className="shrink-0 rounded-lg bg-rose-500/20 px-3 py-1.5 text-xs font-medium text-rose-200 hover:bg-rose-500/30"
           >
@@ -199,9 +213,9 @@ export function Dashboard() {
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
+        <SmoothStat
           label="CPU Usage"
-          value={cpu !== undefined ? `${cpu.toFixed(1)}%` : "—"}
+          target={cpu}
           sub={
             info
               ? `${info.cpu.name} · ${info.cpu.logicalCores} threads`
@@ -209,9 +223,9 @@ export function Dashboard() {
           }
           icon={<Cpu className="h-4 w-4 text-cyan-400" />}
         />
-        <Stat
+        <SmoothStat
           label="Memory"
-          value={mem ? `${mem.usagePercent.toFixed(1)}%` : "—"}
+          target={mem ? mem.usagePercent : null}
           sub={
             mem
               ? `${formatBytes(mem.usedBytes)} / ${formatBytes(mem.totalBytes)}`
@@ -219,22 +233,24 @@ export function Dashboard() {
           }
           icon={<MemoryStick className="h-4 w-4 text-violet-400" />}
         />
-        <Stat
+        <SmoothStat
           label="Download"
-          value={formatRate(down)}
+          target={down}
+          format={formatRate}
           sub="across all interfaces"
           icon={<ArrowDown className="h-4 w-4 text-emerald-400" />}
         />
-        <Stat
+        <SmoothStat
           label="Upload"
-          value={formatRate(up)}
+          target={up}
+          format={formatRate}
           sub="across all interfaces"
           icon={<ArrowUp className="h-4 w-4 text-amber-400" />}
         />
       </div>
 
       <div className="space-y-4">
-        <Card title="CPU & Memory History" action={<span className="text-xs text-slate-500">Last 90 seconds</span>}>
+        <Card title="CPU & Memory History" action={<span className="text-xs text-slate-500">Last 60 seconds</span>}>
           <div
             className="h-64"
             role="img"
@@ -287,22 +303,7 @@ export function Dashboard() {
           {(stats?.perCoreUsage ?? []).length === 0 ? (
             <p className="text-sm text-slate-500">Collecting core data…</p>
           ) : (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-              {(stats?.perCoreUsage ?? []).map((usage, i) => (
-                <div
-                  key={i}
-                  className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-3"
-                >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium text-slate-400">Core {i}</span>
-                    <span className="text-sm font-semibold tabular-nums text-slate-200">
-                      {usage.toFixed(0)}%
-                    </span>
-                  </div>
-                  <ProgressBar value={usage} tone="cyan" />
-                </div>
-              ))}
-            </div>
+            <SmoothCoreGrid usage={stats?.perCoreUsage ?? []} />
           )}
         </Card>
       </div>
@@ -426,6 +427,85 @@ function Loading() {
     <div className="flex items-center gap-2 text-sm text-slate-500">
       <Activity className="h-4 w-4 animate-pulse" />
       Loading…
+    </div>
+  );
+}
+
+/**
+ * `Stat` whose value glides between 1 Hz samples at 60 fps. The smoothing
+ * state lives here, so per-frame re-renders stay confined to this leaf —
+ * the chart and cards below don't re-render on every animation frame.
+ */
+function SmoothStat({
+  target,
+  format = (v: number) => `${v.toFixed(1)}%`,
+  ...props
+}: {
+  target: number | null | undefined;
+  format?: (v: number) => string;
+} & Omit<ComponentProps<typeof Stat>, "value">) {
+  const value = useSmoothValue(target);
+  return <Stat {...props} value={value != null ? format(value) : "—"} />;
+}
+
+/**
+ * Per-core usage grid with one shared rAF loop easing every core toward its
+ * latest sample (instead of N independent loops). Resets instantly when the
+ * core count changes; snaps when the user prefers reduced motion.
+ */
+function SmoothCoreGrid({ usage }: { usage: number[] }) {
+  const targetsRef = useRef<number[]>(usage);
+  const [values, setValues] = useState<number[]>(usage);
+  const rafRef = useRef(0);
+
+  useEffect(() => {
+    targetsRef.current = usage;
+    if (usage.length !== values.length) {
+      setValues(usage);
+      return;
+    }
+    if (REDUCED_MOTION) {
+      setValues(usage);
+      return;
+    }
+    let start: number | null = null;
+    const step = (now: number) => {
+      if (start === null) start = now;
+      const dt = Math.min(100, now - start);
+      start = now;
+      const alpha = 1 - Math.exp(-dt / 300);
+      const targets = targetsRef.current;
+      let converged = true;
+      setValues((prev) =>
+        prev.map((v, i) => {
+          const t = targets[i] ?? v;
+          const next = v + (t - v) * alpha;
+          if (Math.abs(t - next) > 0.05) converged = false;
+          return next;
+        }),
+      );
+      if (!converged) rafRef.current = requestAnimationFrame(step);
+    };
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [usage, values.length]);
+
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+      {values.map((usage, i) => (
+        <div
+          key={i}
+          className="rounded-lg border border-slate-800/80 bg-slate-950/40 p-3"
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-medium text-slate-400">Core {i}</span>
+            <span className="text-sm font-semibold tabular-nums text-slate-200">
+              {usage.toFixed(0)}%
+            </span>
+          </div>
+          <ProgressBar value={usage} tone="cyan" />
+        </div>
+      ))}
     </div>
   );
 }

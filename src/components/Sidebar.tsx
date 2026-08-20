@@ -85,6 +85,7 @@ export function Sidebar({
             <button
               key={id}
               onClick={() => onNavigate(id)}
+              aria-current={isActive ? "page" : undefined}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 isActive
                   ? "bg-slate-800/80 text-slate-100"

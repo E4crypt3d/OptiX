@@ -325,6 +325,13 @@ pub fn recent_samples(db: tauri::State<'_, Database>) -> Result<Vec<HardwareSamp
     db.recent_hardware_samples(200)
 }
 
+/// Forward a frontend log message (render errors, unhandled rejections) into
+/// the backend log file. Level is whitelisted and length-capped in logging.rs.
+#[tauri::command]
+pub fn log_event(level: String, message: String) {
+    crate::logging::from_frontend(&level, &message);
+}
+
 /// App version and on-disk data locations (Settings page).
 #[tauri::command]
 pub fn app_info() -> AppInfo {

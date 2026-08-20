@@ -9,6 +9,11 @@ use crate::models::games::GameProfile;
 use crate::models::hardware::HardwareSample;
 use crate::models::snapshot::{ChangeRecord, Snapshot, SnapshotStatus};
 
+/// How many telemetry rows to keep. The dashboard records one sample every
+/// 30 s while visible, so this bounds the table at ~17 h of continuous
+/// monitoring (several days of typical use) rather than unbounded growth.
+pub const HARDWARE_SAMPLE_RETENTION: i64 = 2000;
+
 /// Root directory for all Optix data.
 ///
 /// On Windows this is `C:\ProgramData\Optix`; elsewhere it falls back to a
@@ -146,7 +151,12 @@ CREATE TABLE IF NOT EXISTS crash_reports (
 ";
 
 fn migrate(conn: &Connection) -> Result<()> {
-    conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
+    // WAL allows the GameWatcher's second in-process connection to read while
+    // the main one writes; busy_timeout turns transient writer contention
+    // into a short wait instead of an immediate SQLITE_BUSY error.
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;",
+    )?;
     // `CREATE TABLE IF NOT EXISTS` is idempotent, so run it unconditionally:
     // it builds fresh databases and backfills tables added after an existing
     // database was first created.
@@ -484,7 +494,9 @@ impl Database {
         })
     }
 
-    /// Insert a telemetry sample into `hardware_history`.
+    /// Insert a telemetry sample into `hardware_history`, pruning to the
+    /// newest [`HARDWARE_SAMPLE_RETENTION`] rows so the table can't grow
+    /// without bound (the dashboard records one sample every 30 s).
     pub fn insert_hardware_sample(&self, s: &HardwareSample) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -510,6 +522,16 @@ impl Database {
                 s.fps,
                 s.frame_time_ms,
             ],
+        )?;
+        // Keep only the newest N rows; the oldest fall off the end. Subquery is
+        // NULL-safe on an empty table (prune is then a no-op).
+        conn.execute(
+            &format!(
+                "DELETE FROM hardware_history WHERE id <= COALESCE((
+                     SELECT id FROM hardware_history ORDER BY id DESC LIMIT 1 OFFSET {0}), 0)",
+                HARDWARE_SAMPLE_RETENTION
+            ),
+            [],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -941,6 +963,37 @@ mod tests {
         assert_eq!(rows[0].cpu_usage, Some(12.5));
         assert_eq!(rows[0].ram_total_mb, Some(16000));
         assert_eq!(rows[0].net_down_bps, Some(500));
+    }
+
+    #[test]
+    fn hardware_history_prunes_beyond_retention() {
+        let db = Database::open_in_memory().unwrap();
+        let sample = HardwareSample {
+            id: None,
+            ts_ms: 1,
+            cpu_usage: Some(1.0),
+            cpu_temp: None,
+            ram_used_mb: Some(1),
+            ram_total_mb: Some(2),
+            gpu_usage: None,
+            gpu_temp: None,
+            gpu_vram_mb: None,
+            gpu_power_w: None,
+            disk_used_mb: None,
+            disk_total_mb: None,
+            net_down_bps: None,
+            net_up_bps: None,
+            fps: None,
+            frame_time_ms: None,
+        };
+        let retention = HARDWARE_SAMPLE_RETENTION as usize;
+        for _ in 0..(retention + 10) {
+            db.insert_hardware_sample(&sample).unwrap();
+        }
+        let rows = db.recent_hardware_samples(10_000).unwrap();
+        assert_eq!(rows.len(), retention);
+        // The newest row survives; the oldest were pruned.
+        assert_eq!(rows[0].ts_ms, 1);
     }
 
     #[test]

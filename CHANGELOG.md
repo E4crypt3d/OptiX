@@ -5,6 +5,44 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-08-20
+
+### Added
+
+- **Per-view error boundary**: a page that crashes while rendering now shows
+  the error with Retry / Go to Dashboard buttons instead of blanking the
+  whole app; switching tabs resets the boundary.
+- **Frontend errors now reach `logs.txt`**: uncaught errors, unhandled
+  promise rejections, and render crashes are forwarded to the backend log via
+  a new `log_event` command (level-whitelisted, length-capped), so frontend
+  failures are visible in release builds too.
+- **Global keyboard-focus outline** and `prefers-reduced-motion` support; the
+  sidebar marks the active page with `aria-current`.
+- **Telemetry retention**: `hardware_history` is pruned to the newest 2,000
+  samples, so the dashboard's 30-second recorder can no longer grow the
+  database without bound.
+
+### Changed
+
+- **Smooth dashboard updates**: sampling raised from 1.5 s to 1 s, and CPU /
+  memory / network values now glide between samples at 60 fps via
+  `requestAnimationFrame` interpolation, with re-renders isolated to the
+  affected numbers (the chart and cards re-render only once per second). The
+  history chart window is relabeled to the last 60 seconds, and download /
+  upload show an unavailable state until the first sample arrives.
+- **SQLite `busy_timeout` (5 s)**: the game watcher's second WAL connection
+  now waits out transient writer contention instead of failing with
+  `SQLITE_BUSY`.
+- **Dashboard error banner** renders readable backend messages instead of
+  `[object Object]`.
+
+### Fixed
+
+- **Snapshot ids are validated** before any filesystem join (delete / restore
+  / diff), closing a path-traversal path for malformed ids.
+- **Linux ping passes `--` before the host** so a hostname beginning with `-`
+  cannot be parsed as a command option.
+
 ## [0.17.0] - 2026-08-20
 
 ### Added

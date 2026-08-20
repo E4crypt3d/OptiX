@@ -60,6 +60,24 @@ pub fn panic(info: &std::panic::PanicHookInfo<'_>) {
     write_line("PANIC", "unhandled panic", &info.to_string());
 }
 
+/// Forward a message from the frontend (unhandled rejections, render errors)
+/// into the same log so nothing disappears in a release build. The level is
+/// whitelisted and the message truncated — never trust the webview's input.
+pub fn from_frontend(level: &str, message: &str) {
+    let level = match level {
+        "warn" => "WARN",
+        "error" => "ERROR",
+        _ => "INFO",
+    };
+    let message = message.trim();
+    // Char-boundary-safe truncation (byte slicing could split a multibyte char
+    // and panic the logging path).
+    let message: String = message.chars().take(2000).collect();
+    if !message.is_empty() {
+        write_line(level, "frontend", &message);
+    }
+}
+
 fn resolve_log_path() -> PathBuf {
     // The software installation directory, as requested — writable here since
     // Optix runs elevated (requireAdministrator). Fall back to the app data

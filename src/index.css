@@ -18,6 +18,25 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Consistent keyboard focus across every interactive element — visible even
+   on the dark background, without cluttering mouse users. */
+:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Respect users who ask for less motion: calm the spinner/pulse affordances. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Skip layout/painting for cards below the fold (Chromium/WebView2). `auto`
    remembers the last rendered size so tall pages keep stable scroll height. */
 .cv {

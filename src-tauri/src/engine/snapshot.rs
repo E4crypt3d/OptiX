@@ -3,9 +3,27 @@ use std::fs;
 use serde_json::Value;
 
 use crate::db::sqlite::{snapshots_dir, Database};
-use crate::error::Result;
+use crate::error::{OptixError, Result};
 use crate::models::hardware::HardwareInfo;
 use crate::models::snapshot::{Snapshot, SnapshotStatus};
+
+/// A snapshot id must be safe to join into a filesystem path. Ids are
+/// internally-generated UUIDs; this is defense-in-depth so a malformed id
+/// from the frontend can never escape the snapshots directory (where
+/// `delete` calls `remove_dir_all`).
+pub(crate) fn validate_snapshot_id(id: &str) -> Result<()> {
+    if id.is_empty()
+        || id.len() > 64
+        || id.contains('/')
+        || id.contains('\\')
+        || id.contains("..")
+    {
+        return Err(OptixError::InvalidState(format!(
+            "invalid snapshot id: {id:?}"
+        )));
+    }
+    Ok(())
+}
 
 /// Number of snapshots to retain (oldest pruned after each create).
 pub const SNAPSHOT_RETENTION: usize = 20;
@@ -62,6 +80,7 @@ fn create_with_system(db: &Database, name: &str, reason: Option<&str>, system: V
 
 /// Delete a snapshot: remove its files and database row.
 pub fn delete(db: &Database, id: &str) -> Result<()> {
+    validate_snapshot_id(id)?;
     let dir = snapshots_dir().join(id);
     if dir.is_dir() {
         fs::remove_dir_all(&dir)?;
