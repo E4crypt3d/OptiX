@@ -52,6 +52,8 @@ export interface NetworkInterface {
   transmittedBytes: number;
   totalReceivedBytes: number;
   totalTransmittedBytes: number;
+  receivedBytesPerSec: number;
+  transmittedBytesPerSec: number;
 }
 
 export interface DisplayInfo {

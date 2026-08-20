@@ -64,6 +64,11 @@ pub struct PhysicalDiskInfo {
 }
 
 /// Per-interface network counters.
+///
+/// `received_bytes` / `transmitted_bytes` are deltas since the previous
+/// refresh of the shared `Networks` instance; the `*_per_sec` fields are the
+/// same deltas divided by the actual elapsed time, so they can be displayed
+/// directly as rates regardless of who triggered the refresh.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkInterface {
@@ -74,6 +79,10 @@ pub struct NetworkInterface {
     pub transmitted_bytes: u64,
     pub total_received_bytes: u64,
     pub total_transmitted_bytes: u64,
+    /// Receive rate (bytes/sec) over the last refresh window.
+    pub received_bytes_per_sec: f64,
+    /// Transmit rate (bytes/sec) over the last refresh window.
+    pub transmitted_bytes_per_sec: f64,
 }
 
 /// A connected monitor / display device.

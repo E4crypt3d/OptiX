@@ -21,7 +21,10 @@ fn now_ms() -> u64 {
 pub struct MonitorState {
     sys: Mutex<System>,
     networks: Mutex<Networks>,
-    last_sample: Mutex<Option<Instant>>,
+    /// Instant of the last `Networks::refresh`, shared by every command that
+    /// refreshes the network counters, so per-window byte deltas can be
+    /// converted to accurate rates regardless of which command refreshed last.
+    last_refresh: Mutex<Option<Instant>>,
 }
 
 impl MonitorState {
@@ -33,7 +36,7 @@ impl MonitorState {
         Self {
             sys: Mutex::new(sys),
             networks: Mutex::new(networks),
-            last_sample: Mutex::new(None),
+            last_refresh: Mutex::new(None),
         }
     }
 }
@@ -112,6 +115,8 @@ pub(crate) fn scan_system_blocking() -> Result<HardwareInfo> {
             transmitted_bytes: data.transmitted(),
             total_received_bytes: data.total_received(),
             total_transmitted_bytes: data.total_transmitted(),
+            received_bytes_per_sec: 0.0,
+            transmitted_bytes_per_sec: 0.0,
         })
         .collect();
 
@@ -205,6 +210,18 @@ pub fn system_stats(state: tauri::State<'_, MonitorState>) -> Result<SystemStats
         .networks
         .lock()
         .map_err(|e| OptixError::InvalidState(e.to_string()))?;
+    let now = Instant::now();
+    let elapsed = {
+        let mut last = state
+            .last_refresh
+            .lock()
+            .map_err(|e| OptixError::InvalidState(e.to_string()))?;
+        let elapsed = last
+            .map(|t| now.duration_since(t).as_secs_f64())
+            .unwrap_or(1.0);
+        *last = Some(now);
+        elapsed
+    };
     networks.refresh(true);
     let network: Vec<NetworkInterface> = networks
         .iter()
@@ -214,6 +231,8 @@ pub fn system_stats(state: tauri::State<'_, MonitorState>) -> Result<SystemStats
             transmitted_bytes: data.transmitted(),
             total_received_bytes: data.total_received(),
             total_transmitted_bytes: data.total_transmitted(),
+            received_bytes_per_sec: data.received() as f64 / elapsed,
+            transmitted_bytes_per_sec: data.transmitted() as f64 / elapsed,
         })
         .collect();
 
@@ -252,15 +271,10 @@ pub fn record_sample(
         .networks
         .lock()
         .map_err(|e| OptixError::InvalidState(e.to_string()))?;
-    networks.refresh(true);
-    let down_bytes = networks.iter().map(|(_, d)| d.received()).sum::<u64>();
-    let up_bytes = networks.iter().map(|(_, d)| d.transmitted()).sum::<u64>();
-
-    // Approximate bits/sec from the bytes delta since the previous sample.
     let now = Instant::now();
     let elapsed = {
         let mut last = state
-            .last_sample
+            .last_refresh
             .lock()
             .map_err(|e| OptixError::InvalidState(e.to_string()))?;
         let elapsed = last
@@ -269,6 +283,12 @@ pub fn record_sample(
         *last = Some(now);
         elapsed
     };
+    networks.refresh(true);
+    let down_bytes = networks.iter().map(|(_, d)| d.received()).sum::<u64>();
+    let up_bytes = networks.iter().map(|(_, d)| d.transmitted()).sum::<u64>();
+
+    // Bytes since the last refresh, divided by the actual elapsed time, in
+    // bits/sec for the `hardware_history` schema.
     let net_down_bps = (down_bytes as f64 / elapsed * 8.0) as i64;
     let net_up_bps = (up_bytes as f64 / elapsed * 8.0) as i64;
 
