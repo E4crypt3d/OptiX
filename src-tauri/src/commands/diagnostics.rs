@@ -6,11 +6,11 @@ use crate::engine::diagnostics::{
     self, BenchmarkSnapshot, CrashSnapshot, DiagnosticInput, ProcessSnapshot,
 };
 use crate::error::{OptixError, Result};
-use crate::models::diagnostics::Diagnostic;
+use crate::models::diagnostics::DiagnosticsReport;
 
 /// Run the rule-based diagnostic engine over the live system.
 #[tauri::command]
-pub async fn run_diagnostics(db: State<'_, Database>) -> Result<Vec<Diagnostic>> {
+pub async fn run_diagnostics(db: State<'_, Database>) -> Result<DiagnosticsReport> {
     let benchmarks: Vec<BenchmarkSnapshot> = db
         .list_benchmarks()?
         .into_iter()
@@ -18,6 +18,9 @@ pub async fn run_diagnostics(db: State<'_, Database>) -> Result<Vec<Diagnostic>>
             avg_fps: b.avg_fps,
             cpu_avg: b.cpu_avg,
             gpu_avg: b.gpu_avg,
+            p1_fps: b.p1_fps,
+            p95_frame_time_ms: b.p95_frame_time_ms,
+            dropped_frames: Some(b.dropped_frames as i64),
         })
         .collect();
 
@@ -26,9 +29,9 @@ pub async fn run_diagnostics(db: State<'_, Database>) -> Result<Vec<Diagnostic>>
         .map_err(|e| OptixError::Other(e.to_string()))
 }
 
-fn collect_and_diagnose(benchmarks: Vec<BenchmarkSnapshot>) -> Vec<Diagnostic> {
+fn collect_and_diagnose(benchmarks: Vec<BenchmarkSnapshot>) -> DiagnosticsReport {
     let input = collect_input(benchmarks);
-    diagnostics::diagnose(&input)
+    diagnostics::diagnose_report(&input)
 }
 
 fn collect_input(benchmarks: Vec<BenchmarkSnapshot>) -> DiagnosticInput {
@@ -45,6 +48,8 @@ fn collect_input(benchmarks: Vec<BenchmarkSnapshot>) -> DiagnosticInput {
 
     let ram_used_mb = (sys.used_memory() / (1024 * 1024)) as i64;
     let ram_total_mb = (sys.total_memory() / (1024 * 1024)) as i64;
+    let swap_used_mb = (sys.used_swap() / (1024 * 1024)) as i64;
+    let swap_total_mb = (sys.total_swap() / (1024 * 1024)) as i64;
 
     let processes: Vec<ProcessSnapshot> = sys
         .processes()
@@ -88,8 +93,10 @@ fn collect_input(benchmarks: Vec<BenchmarkSnapshot>) -> DiagnosticInput {
         .into_iter()
         .map(|c| CrashSnapshot {
             event_id: c.event_id,
+            app: Some(c.app),
             module: c.module,
             severity: c.severity,
+            detected_at_ms: c.detected_at,
         })
         .collect();
 
@@ -98,10 +105,14 @@ fn collect_input(benchmarks: Vec<BenchmarkSnapshot>) -> DiagnosticInput {
         gpu_usage: None,
         ram_used_mb,
         ram_total_mb,
+        swap_used_mb,
+        swap_total_mb,
+        uptime_secs: System::uptime(),
         disk_free_percent,
         processes,
         benchmarks,
         crashes,
         temperatures,
+        psi: diagnostics::read_psi(),
     }
 }

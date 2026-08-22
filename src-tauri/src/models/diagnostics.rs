@@ -21,3 +21,17 @@ pub struct Diagnostic {
     /// 0–100 confidence.
     pub confidence: u8,
 }
+
+/// Full result of a diagnostics run: ranked findings plus an overall health
+/// score derived from them. Still purely advisory — nothing is applied.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsReport {
+    pub findings: Vec<Diagnostic>,
+    /// 0–100 system health score (100 = no findings).
+    pub score: u8,
+    /// Short verdict matching the score band.
+    pub verdict: String,
+    /// How many rules were evaluated, so "no issues" is verifiable.
+    pub checks_run: u32,
+}
