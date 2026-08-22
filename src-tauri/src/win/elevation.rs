@@ -57,10 +57,13 @@ pub fn relaunch_elevated() -> bool {
 #[cfg(windows)]
 pub fn ensure_elevated() -> bool {
     if is_elevated() {
-        true
-    } else {
-        relaunch_elevated()
+        return true;
     }
+    // Once the UAC relaunch is submitted this instance must exit — returning
+    // `true` here would keep BOTH copies alive and show two windows. A
+    // declined/failed prompt also exits: unelevated is not a supported mode.
+    relaunch_elevated();
+    false
 }
 
 #[cfg(not(windows))]
