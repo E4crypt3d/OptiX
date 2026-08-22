@@ -2,6 +2,7 @@ mod commands;
 mod db;
 mod engine;
 mod error;
+pub mod linux;
 mod logging;
 mod models;
 pub mod win;
@@ -10,7 +11,7 @@ use commands::processes::ProcessMonitorState;
 use commands::system::MonitorState;
 use db::sqlite::Database;
 use engine::optimizer::OptimizerState;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -42,6 +43,9 @@ pub fn run() {
             // Live crash watch: polls the Application event log and emits
             // `optix://crash-detected` when new crashes are logged.
             engine::crash::spawn_crash_watch(app.handle().clone(), 20);
+            // System tray: quick access to the main views, and a graceful
+            // close-to-tray path for long-running operations.
+            setup_tray(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -50,6 +54,7 @@ pub fn run() {
             commands::system::record_sample,
             commands::system::recent_samples,
             commands::system::app_info,
+            commands::system::export_system_report,
             commands::system::log_event,
             commands::snapshot::create_snapshot,
             commands::snapshot::list_snapshots,
@@ -126,4 +131,80 @@ pub fn run() {
         .run(tauri::generate_context!())
         .inspect_err(|e| logging::error("tauri run failed", e))
         .expect("error while running tauri application");
+}
+
+/// Register the system-tray icon and its quick-access menu. Selecting a
+/// navigation item shows the window and emits `optix://navigate` so the
+/// frontend switches to that view; Quit exits the app. The icon lives for the
+/// lifetime of the app (held by the manager), so the tray is never dropped.
+fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::TrayIconBuilder;
+
+    let show = MenuItem::with_id(app, "show", "Show Optix", true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide", "Minimize to tray", true, None::<&str>)?;
+    let dashboard = MenuItem::with_id(app, "navigate:dashboard", "Dashboard", true, None::<&str>)?;
+    let scanner = MenuItem::with_id(app, "navigate:scanner", "System Scanner", true, None::<&str>)?;
+    let cleanup = MenuItem::with_id(app, "navigate:cleanup", "Cleanup", true, None::<&str>)?;
+    let snapshots = MenuItem::with_id(app, "navigate:snapshots", "Snapshots", true, None::<&str>)?;
+    let benchmarks = MenuItem::with_id(app, "navigate:benchmarks", "Benchmarks", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "navigate:settings", "Settings", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Optix", true, None::<&str>)?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show,
+            &hide,
+            &PredefinedMenuItem::separator(app)?,
+            &dashboard,
+            &scanner,
+            &cleanup,
+            &snapshots,
+            &benchmarks,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &quit,
+        ],
+    )?;
+
+    // The window icon configured in tauri.conf.json doubles as the tray icon
+    // (same branding, no extra asset).
+    let tray = TrayIconBuilder::with_id("optix-tray")
+        .icon(app.default_window_icon().cloned().ok_or_else(|| {
+            tauri::Error::AssetNotFound("icons/icon.png".into())
+        })?)
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => show_main_window(app),
+            "hide" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
+            "quit" => app.exit(0),
+            id => {
+                if let Some(view) = id.strip_prefix("navigate:") {
+                    show_main_window(app);
+                    if let Err(e) = app.emit("optix://navigate", view) {
+                        crate::logging::warn(&format!("tray navigate emit failed: {e}"));
+                    }
+                }
+            }
+        })
+        .build(app)?;
+
+    // Hold the tray so it isn't dropped (and removed) when setup returns.
+    app.manage(tray);
+    Ok(())
+}
+
+/// Show and focus the main window (used by the tray so close-to-tray apps can
+/// be brought back with one click).
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
 }

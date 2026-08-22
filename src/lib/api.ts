@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppInfo,
   AppxPackage,
+  SystemReportExport,
   BenchmarkResult,
   BloatwareRemoveResult,
   ChangeRecord,
@@ -9,7 +10,7 @@ import type {
   CleanupResult,
   CrashReport,
   DetectedGame,
-  Diagnostic,
+  DiagnosticsReport,
   Game,
   GameProfile,
   GameProfileApplyResult,
@@ -373,8 +374,8 @@ export function generateCrashReport(crash: CrashReport): Promise<string> {
   return invoke<string>("generate_crash_report", { crash });
 }
 
-export function runDiagnostics(): Promise<Diagnostic[]> {
-  return invoke<Diagnostic[]>("run_diagnostics");
+export function runDiagnostics(): Promise<DiagnosticsReport> {
+  return invoke<DiagnosticsReport>("run_diagnostics");
 }
 
 export function scanBloatware(): Promise<AppxPackage[]> {
@@ -387,4 +388,8 @@ export function removeBloatware(fullNames: string[]): Promise<BloatwareRemoveRes
 
 export function getAppInfo(): Promise<AppInfo> {
   return invoke<AppInfo>("app_info");
+}
+
+export function exportSystemReport(path: string, format: "html" | "json"): Promise<SystemReportExport> {
+  return invoke<SystemReportExport>("export_system_report", { path, format });
 }

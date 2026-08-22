@@ -1,6 +1,7 @@
-import { Component, lazy, Suspense, useState, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
+import { Component, lazy, Suspense, useEffect, useState, type ComponentType, type LazyExoticComponent, type ReactNode } from "react";
 import { Activity, RefreshCw } from "lucide-react";
-import { Sidebar, type ViewId } from "./components/Sidebar";
+import { listen } from "@tauri-apps/api/event";
+import { Sidebar, NAV, type ViewId } from "./components/Sidebar";
 import { logEvent } from "./lib/api";
 import { errMsg } from "./lib/errors";
 
@@ -31,6 +32,46 @@ const viewModules: Record<ViewId, LazyExoticComponent<ComponentType>> = {
 export default function App() {
   const [view, setView] = useState<ViewId>("dashboard");
   const View = viewModules[view];
+
+  // System tray: the backend emits `optix://navigate` when a tray menu item
+  // is picked; switch to that view (the window is shown by the backend).
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void listen<string>("optix://navigate", (event) => {
+      if (disposed) return;
+      const target = event.payload as ViewId;
+      if (target in viewModules) setView(target);
+    }).then((fn) => {
+      if (disposed) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  // Keyboard navigation: Ctrl/Cmd+1..9 jump straight to the first nine views.
+  // Ignored while the user is typing in an input/textarea or other editable
+  // element, so shortcuts never eat keystrokes meant for a field.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const tag = (event.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const digit = event.key;
+      if (digit < "1" || digit > "9") return;
+      const index = Number(digit) - 1;
+      const target = NAV[index]?.id;
+      if (target) {
+        event.preventDefault();
+        setView(target);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[#0a0e17] text-slate-100">

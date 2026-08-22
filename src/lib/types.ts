@@ -388,10 +388,61 @@ export interface NetworkAdapter {
   dhcpEnabled: boolean;
 }
 
+export interface InterfaceCounters {
+  receivedBytes: number;
+  sentBytes: number;
+  receiveErrors: number;
+  sendErrors: number;
+  receiveDiscards: number;
+  sendDiscards: number;
+}
+
+export interface WifiInfo {
+  ssid: string | null;
+  bssid: string | null;
+  channel: number | null;
+  signalPercent: number | null;
+  rssiDbm: number | null;
+  phyType: string;
+  rxRateMbps: number | null;
+  txRateMbps: number | null;
+  authentication: string;
+  cipher: string;
+}
+
+export interface AdapterDriver {
+  version: string | null;
+  date: string | null;
+  provider: string | null;
+  ndisVersion: string | null;
+  fullDuplex: boolean | null;
+}
+
+export interface AdapterInventory {
+  guid: string;
+  name: string;
+  description: string;
+  kind: "ethernet" | "wifi" | "vpn" | "virtual" | "bluetooth" | "other";
+  isUp: boolean;
+  isVirtual: boolean;
+  macAddress: string | null;
+  mtu: number | null;
+  transmitLinkBps: number | null;
+  receiveLinkBps: number | null;
+  ipAddresses: string[];
+  gateways: string[];
+  dnsServers: string[];
+  dhcpEnabled: boolean | null;
+  counters: InterfaceCounters | null;
+  wifi: WifiInfo | null;
+  driver: AdapterDriver | null;
+}
+
 export interface NetworkStatus {
   adapters: NetworkAdapter[];
   gateway: string | null;
   currentDns: string[];
+  inventory: AdapterInventory[];
 }
 
 export interface TcpTweak {
@@ -573,6 +624,13 @@ export interface Diagnostic {
   confidence: number;
 }
 
+export interface DiagnosticsReport {
+  findings: Diagnostic[];
+  score: number;
+  verdict: string;
+  checksRun: number;
+}
+
 export type AppxClassification = "protected" | "removal" | "caution" | "unknown";
 
 export interface AppxPackage {
@@ -614,4 +672,10 @@ export interface AppInfo {
   snapshotsDir: string;
   snapshotRetention: number;
   logPath: string;
+}
+
+export interface SystemReportExport {
+  path: string;
+  sizeBytes: number;
+  format: string;
 }
