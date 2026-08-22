@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo-no-bg.png" alt="Optix logo" width="150" />
+</p>
+
 # Optix
 
 **Optimize your PC without fear. Every change is tracked. Every change can be undone.**
@@ -24,7 +28,7 @@ Every modification follows the same pipeline:
 | **Bloatware** | Review preinstalled Store apps with a protected allowlist (never flags core system or Xbox packages), and remove provisioned copies so they don't reinstall. |
 | **Processes & RAM** | See every running process with a REQUIRED / SAFE / UNKNOWN classification, per-process **GPU usage**, priority control (never REALTIME), and a gaming mode that boosts your game and lowers background apps. |
 | **Power** | Apply Optix power profiles (Balanced / Competitive / Maximum) cloned from the built-in schemes, and disable network-adapter power saving — all reversible. |
-| **Startup & Services** | Review what runs at boot and in the background, with a hard never-flag list, a dedicated Windows Search toggle, and **scheduled-task** enumeration with signature verification. |
+| **Startup & Services** | Review what runs at boot and in the background, with a hard never-flag list, a dedicated Windows Search toggle, and **scheduled-task** enumeration with signature verification. On Linux the same tab manages **systemd services** (system + user), **XDG autostart** apps, and **systemd timers + cron** jobs. |
 | **Network** | Benchmark DNS resolvers (latency + packet loss) and apply the fastest one; **ICMP ping test** (RTT + jitter); experimental **TCP/IP tweaks** with one-click apply and revert. |
 | **GPU** | Risk-tiered gaming toggles (HAGS, Game DVR, Memory Integrity/VBS, Game Mode, MPO), shader-cache management, AMD shader-cache mode, and **NVIDIA per-game driver profiles** (DRS). |
 | **Game Profiles** | Auto-detect installed games (Steam, Epic, Riot, Battle.net) or add them manually, and set per-game CPU priority, affinity, power profile, and an optional NVIDIA profile — applied automatically on launch. |

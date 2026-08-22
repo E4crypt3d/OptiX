@@ -5,6 +5,49 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-08-22
+
+### Added
+
+- **System tray**: Optix now lives in the notification area with a
+  quick-access menu — Show / Minimize to tray, jump straight to Dashboard,
+  System Scanner, Cleanup, Snapshots, Benchmarks, or Settings, and Quit.
+- **System report export**: the System Scanner can export the full hardware
+  scan as a self-contained HTML page (shareable with support) or pretty JSON.
+- **Keyboard navigation**: Ctrl+1…9 jumps straight to the first nine pages;
+  shortcuts are shown in the sidebar and announced via `aria-keyshortcuts`.
+- **Game launcher cache cleanup**: Steam, Epic Games, Battle.net, and GOG
+  Galaxy web/app caches are now cleanup candidates (rebuilt on next launch).
+- **Startup & Services is now cross-platform**: on Linux the tab enumerates
+  systemd services (system + user scope), XDG autostart applications, and
+  scheduled tasks (systemd timers + cron) instead of showing "Windows only"
+  placeholders. Service start/stop and startup-app toggles work on Linux too
+  (snapshot-first and reversible; system-scope mutations need root/polkit).
+  Windows Search stays Windows-only, and the signature badge reads
+  "unavailable" on Linux since there is no Authenticode equivalent.
+- **Connected Wi-Fi details**: when you're on wireless, the Network page now
+  shows the network name (SSID), signal strength, Wi-Fi generation (for
+  example "Wi-Fi 6"), receive/transmit link rates, and the security type —
+  on both Windows and Linux.
+- **Diagnostics health score**: the Diagnostics page now ends with a single
+  0–100 health score and a plain-language verdict ("Healthy", "Minor issues
+  detected", …), with severity filters and per-category icons so the
+  important findings stand out.
+
+### Changed
+
+- **Smarter diagnostics**: the analysis engine grew from 11 to 18 checks.
+  High RAM usage is now judged against how much memory your machine actually
+  has, temperatures are judged per device (an NVMe drive runs hot long before
+  a CPU does), repeated crashes of the same app within a day are grouped into
+  one finding, and stutter (a healthy average FPS with collapsing 1 % lows)
+  is caught from benchmark data. Swap/page-file pressure, very long uptimes,
+  and — on Linux — kernel-reported memory and I/O pressure all get their own
+  advisories. Diagnostics remains advisory only: nothing is ever changed
+  automatically.
+- **New app icon**: Optix has a new logo across the board — taskbar and dock,
+  window title bar, installer shortcuts, the in-app sidebar, and the favicon.
+
 ## [0.20.0] - 2026-08-22
 
 ### Added
