@@ -26,4 +26,5 @@ pub mod services;
 pub mod signature;
 pub mod startup;
 pub mod tasks;
+pub mod wifi;
 pub mod wmi;

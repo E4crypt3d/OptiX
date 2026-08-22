@@ -134,6 +134,7 @@ pub fn status() -> NetworkStatus {
         adapters: win::network::list_adapters(),
         gateway: win::network::gateway(),
         current_dns: win::network::current_dns_servers(),
+        inventory: win::network::inventory(),
     }
 }
 

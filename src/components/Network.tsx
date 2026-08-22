@@ -1,5 +1,25 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, Gauge, Globe, RefreshCw, RotateCcw, Zap } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Activity,
+  Boxes,
+  Cable,
+  Gauge,
+  Globe,
+  MonitorPlay,
+  RefreshCw,
+  RotateCcw,
+  Wifi,
+  Zap,
+} from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import {
   applyDns,
   applyTcpTweaks,
@@ -10,6 +30,7 @@ import {
   resetTcpTweaks,
 } from "../lib/api";
 import type {
+  AdapterInventory,
   DnsBenchmarkResult,
   DnsServer,
   NetworkStatus,
@@ -17,10 +38,41 @@ import type {
   TcpTweak,
 } from "../lib/types";
 import { errMsg } from "../lib/errors";
+import { formatBytes } from "../lib/format";
 import { Badge, Card } from "./ui";
 
 function ms(v: number | null): string {
   return v === null ? "—" : `${v.toFixed(1)} ms`;
+}
+
+function linkSpeed(bps: number | null): string {
+  if (!bps || bps <= 0) return "—";
+  if (bps >= 1_000_000_000) {
+    const gbps = bps / 1_000_000_000;
+    return `${gbps % 1 === 0 ? gbps.toFixed(0) : gbps.toFixed(1)} Gbps`;
+  }
+  return `${Math.round(bps / 1_000_000)} Mbps`;
+}
+
+const KIND_TONE: Record<AdapterInventory["kind"], "cyan" | "violet" | "amber" | "slate"> = {
+  ethernet: "cyan",
+  wifi: "violet",
+  vpn: "amber",
+  virtual: "slate",
+  bluetooth: "slate",
+  other: "slate",
+};
+
+function KindIcon({ kind }: { kind: AdapterInventory["kind"] }) {
+  if (kind === "wifi") return <Wifi className="h-3.5 w-3.5" />;
+  if (kind === "vpn") return <Globe className="h-3.5 w-3.5" />;
+  if (kind === "virtual") return <Boxes className="h-3.5 w-3.5" />;
+  return <Cable className="h-3.5 w-3.5" />;
+}
+
+interface SeriesPoint {
+  t: string;
+  ms: number;
 }
 
 export function Network() {
@@ -37,6 +89,10 @@ export function Network() {
   const [pingHost, setPingHost] = useState("");
   const [pinging, setPinging] = useState(false);
   const [ping, setPing] = useState<PingResult | null>(null);
+  const [monitoring, setMonitoring] = useState(false);
+  const [series, setSeries] = useState<SeriesPoint[]>([]);
+  const [live, setLive] = useState<PingResult | null>(null);
+  const monitorBusy = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -52,16 +108,58 @@ export function Network() {
         const active = s.adapters.find((a) => a.isActive) ?? s.adapters[0];
         return active?.guid ?? "";
       });
+      if (!pingHost.trim()) {
+        const gw = s.gateway;
+        if (gw) setPingHost(gw);
+      }
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [pingHost]);
 
   useEffect(() => {
     void load();
-  }, [load]);
+    // Initial load only; the gateway prefill must not retrigger this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!monitoring) return;
+    const tick = async () => {
+      if (monitorBusy.current) return;
+      const host = pingHost.trim();
+      if (!host) {
+        setMonitoring(false);
+        setError("Enter a host to monitor.");
+        return;
+      }
+      monitorBusy.current = true;
+      try {
+        const r = await pingTest(host, 4);
+        setLive(r);
+        setSeries((prev) => [
+          ...prev.slice(-59),
+          {
+            t: new Date().toLocaleTimeString([], {
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+            ms: r.medianMs ?? 0,
+          },
+        ]);
+      } catch (e) {
+        setError(errMsg(e));
+        setMonitoring(false);
+      } finally {
+        monitorBusy.current = false;
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), 2000);
+    return () => clearInterval(id);
+  }, [monitoring, pingHost]);
 
   async function onBenchmark() {
     setRunning(true);
@@ -155,14 +253,7 @@ export function Network() {
     }
   }
 
-  const sortedResults = useMemo(() => {
-    if (!results) return [];
-    return [...results].sort((a, b) => {
-      if (a.medianMs === null) return 1;
-      if (b.medianMs === null) return -1;
-      return a.medianMs - b.medianMs;
-    });
-  }, [results]);
+  const sortedResults = sortDnsResults(results);
 
   return (
     <div className="space-y-4">
@@ -170,8 +261,9 @@ export function Network() {
         <div>
           <h1 className="text-xl font-semibold text-slate-100">Network</h1>
           <p className="text-sm text-slate-500">
-            Benchmark DNS resolvers and apply the fastest. DNS affects lookups and CDN
-            selection — not in-game ping after a connection is established.
+            Inspect every adapter and driver, benchmark DNS resolvers, and watch your real
+            connection stability. DNS affects lookups and CDN selection — not in-game ping after
+            a connection is established.
           </p>
         </div>
         <button
@@ -194,6 +286,8 @@ export function Network() {
           {notice}
         </div>
       )}
+
+      <AdapterCard status={status} />
 
       <Card title="Connection">
         {status ? (
@@ -281,7 +375,7 @@ export function Network() {
         )}
       </Card>
 
-      <Card title="Ping test">
+      <Card title="Ping & stability monitor">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <input
             value={pingHost}
@@ -290,48 +384,106 @@ export function Network() {
             placeholder="gateway, game server, or 1.1.1.1"
             className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none"
           />
+          {status?.gateway && pingHost.trim() !== status.gateway && (
+            <button
+              onClick={() => setPingHost(status.gateway ?? "")}
+              className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:bg-slate-700"
+            >
+              Use gateway
+            </button>
+          )}
           <button
             onClick={onPing}
-            disabled={pinging}
+            disabled={pinging || monitoring}
             className="flex items-center gap-1.5 rounded-lg bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
           >
             <Activity className="h-4 w-4" />
             {pinging ? "Pinging…" : "Ping"}
           </button>
+          <button
+            onClick={() => {
+              if (monitoring) {
+                setMonitoring(false);
+              } else {
+                if (!pingHost.trim()) {
+                  setError("Enter a host to monitor.");
+                  return;
+                }
+                setSeries([]);
+                setLive(null);
+                setMonitoring(true);
+              }
+            }}
+            className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+              monitoring
+                ? "bg-rose-600/90 text-white hover:bg-rose-500"
+                : "bg-slate-800 text-slate-200 hover:bg-slate-700"
+            }`}
+          >
+            <MonitorPlay className="h-4 w-4" />
+            {monitoring ? "Stop monitor" : "Monitor"}
+          </button>
         </div>
-        {ping && (
+
+        {monitoring && (
+          <div className="mt-4 h-36 rounded-lg border border-slate-800 bg-slate-950/60 p-2">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={series} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="pingFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                <XAxis dataKey="t" stroke="#475569" fontSize={10} tickLine={false} minTickGap={48} />
+                <YAxis
+                  stroke="#475569"
+                  fontSize={10}
+                  tickLine={false}
+                  width={38}
+                  unit="ms"
+                  domain={[0, (max: number) => Math.max(10, Math.ceil(max * 1.25))]}
+                />
+                <Tooltip
+                  contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8 }}
+                  labelStyle={{ color: "#94a3b8" }}
+                  formatter={(value) => [`${Number(value).toFixed(1)} ms`, "median"]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="ms"
+                  name="median"
+                  stroke="#22d3ee"
+                  strokeWidth={2}
+                  fill="url(#pingFill)"
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {(ping || live) && (
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Median</div>
-              <div className="mt-0.5 text-lg font-semibold text-slate-100">{ms(ping.medianMs)}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Jitter</div>
-              <div className="mt-0.5 text-lg font-semibold text-slate-100">{ms(ping.jitterMs)}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Min / Max</div>
-              <div className="mt-0.5 text-sm text-slate-200">
-                {ms(ping.minMs)} / {ms(ping.maxMs)}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Loss</div>
-              <div className="mt-0.5 text-lg font-semibold text-slate-100">
-                {ping.lossPercent.toFixed(0)}%
-              </div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-wider text-slate-500">Replies</div>
-              <div className="mt-0.5 text-lg font-semibold text-slate-100">
-                {ping.received}/{ping.sent}
-              </div>
-            </div>
+            <StatBlock label="Median" value={ms((live ?? ping)!.medianMs)} />
+            <StatBlock label="Jitter" value={ms((live ?? ping)!.jitterMs)} />
+            <StatBlock
+              label="Min / Max"
+              value={`${ms((live ?? ping)!.minMs)} / ${ms((live ?? ping)!.maxMs)}`}
+              small
+            />
+            <StatBlock label="Loss" value={`${(live ?? ping)!.lossPercent.toFixed(0)}%`} />
+            <StatBlock
+              label="Replies"
+              value={`${(live ?? ping)!.received}/${(live ?? ping)!.sent}`}
+            />
           </div>
         )}
         <p className="mt-3 text-xs text-slate-600">
-          ICMP round-trip time and jitter — the honest in-game connection signal (unlike DNS,
-          which only affects lookups).
+          ICMP round-trip time and jitter — the honest in-game connection signal. Monitor pings
+          the gateway every 2 s: spikes here mean your local network; stable gateway but high
+          external ping points at your ISP. Good targets: jitter under 5 ms, zero packet loss.
         </p>
       </Card>
 
@@ -398,5 +550,165 @@ export function Network() {
         )}
       </Card>
     </div>
+  );
+}
+
+function sortDnsResults(results: DnsBenchmarkResult[] | null): DnsBenchmarkResult[] {
+  return (
+    results?.slice().sort((a, b) => {
+      if (a.medianMs === null) return 1;
+      if (b.medianMs === null) return -1;
+      return a.medianMs - b.medianMs;
+    }) ?? []
+  );
+}
+
+function StatBlock({ label, value, small }: { label: string; value: string; small?: boolean }) {
+  return (
+    <div>
+      <div className="text-xs uppercase tracking-wider text-slate-500">{label}</div>
+      <div className={`mt-0.5 font-semibold text-slate-100 ${small ? "text-sm" : "text-lg"}`}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ items }: { items: [string, ReactNode][] }) {
+  return (
+    <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4">
+      {items.map(([k, v]) => (
+        <div key={k} className="min-w-0">
+          <dt className="text-slate-600">{k}</dt>
+          <dd className="truncate text-slate-300" title={typeof v === "string" ? v : undefined}>
+            {v}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function AdapterCard({ status }: { status: NetworkStatus | null }) {
+  if (!status || status.inventory.length === 0) {
+    return (
+      <Card title="Adapters">
+        <p className="text-sm text-slate-500">No adapters detected.</p>
+      </Card>
+    );
+  }
+  return (
+    <Card title={`Adapters (${status.inventory.length})`}>
+      <ul className="space-y-3">
+        {status.inventory.map((a) => {
+          const counters = a.counters;
+          const hasIssues =
+            counters &&
+            (counters.receiveErrors > 0 ||
+              counters.sendErrors > 0 ||
+              counters.receiveDiscards > 0 ||
+              counters.sendDiscards > 0);
+          return (
+            <li
+              key={a.guid}
+              className="rounded-lg border border-slate-800 bg-slate-950/40 p-3"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    a.isUp ? "bg-emerald-400" : "bg-slate-600"
+                  }`}
+                  title={a.isUp ? "connected" : "down"}
+                />
+                <span className="font-medium text-slate-100">{a.name || a.guid}</span>
+                <Badge tone={KIND_TONE[a.kind]}>
+                  <KindIcon kind={a.kind} />
+                  <span className="ml-1">{a.kind.toUpperCase()}</span>
+                </Badge>
+                {a.driver?.fullDuplex === false && <Badge tone="amber">half duplex</Badge>}
+                {hasIssues && <Badge tone="amber">interface errors</Badge>}
+                {!a.isUp && <Badge tone="slate">down</Badge>}
+              </div>
+
+              <DetailRow
+                items={[
+                  ["Link", `${linkSpeed(a.receiveLinkBps)} ↓ / ${linkSpeed(a.transmitLinkBps)} ↑`],
+                  ["MTU", a.mtu ? String(a.mtu) : "—"],
+                  ["MAC", a.macAddress ?? "—"],
+                  [
+                    "IP",
+                    a.ipAddresses.length > 0 ? a.ipAddresses.join(", ") : "no address",
+                  ],
+                  ...(a.gateways.length > 0
+                    ? ([["Gateway", a.gateways.join(", ")]] as [string, ReactNode][])
+                    : []),
+                  ...(a.dhcpEnabled !== null && !a.isVirtual
+                    ? ([["DHCP", a.dhcpEnabled ? "enabled" : "static"]] as [string, ReactNode][])
+                    : []),
+                  ...(a.driver
+                    ? ([
+                        [
+                          "Driver",
+                          [
+                            a.driver.version,
+                            a.driver.date,
+                            a.driver.provider,
+                            a.driver.ndisVersion ? `NDIS ${a.driver.ndisVersion}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "—",
+                        ],
+                      ] as [string, ReactNode][])
+                    : []),
+                ]}
+              />
+
+              {a.wifi && (
+                <DetailRow
+                  items={[
+                    ["SSID", a.wifi.ssid ?? "—"],
+                    ["Signal", a.wifi.signalPercent !== null ? `${a.wifi.signalPercent}%${a.wifi.rssiDbm !== null ? ` (~${a.wifi.rssiDbm} dBm)` : ""}` : "—"],
+                    ["Channel", a.wifi.channel !== null ? String(a.wifi.channel) : "—"],
+                    ["Radio", a.wifi.phyType],
+                    [
+                      "Rates",
+                      `${a.wifi.rxRateMbps !== null ? `${Math.round(a.wifi.rxRateMbps)} Mb/s` : "—"} rx · ${
+                        a.wifi.txRateMbps !== null ? `${Math.round(a.wifi.txRateMbps)} Mb/s` : "—"
+                      } tx`,
+                    ],
+                    ["Auth", a.wifi.authentication],
+                    ["Cipher", a.wifi.cipher],
+                    ["BSSID", a.wifi.bssid ?? "—"],
+                  ]}
+                />
+              )}
+
+              {counters && (
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs tabular-nums text-slate-500">
+                  <span>RX {formatBytes(counters.receivedBytes)}</span>
+                  <span>TX {formatBytes(counters.sentBytes)}</span>
+                  {counters.receiveErrors > 0 && (
+                    <span className="text-amber-400">RX errors {counters.receiveErrors}</span>
+                  )}
+                  {counters.sendErrors > 0 && (
+                    <span className="text-amber-400">TX errors {counters.sendErrors}</span>
+                  )}
+                  {counters.receiveDiscards > 0 && (
+                    <span className="text-amber-400">RX dropped {counters.receiveDiscards}</span>
+                  )}
+                  {counters.sendDiscards > 0 && (
+                    <span className="text-amber-400">TX dropped {counters.sendDiscards}</span>
+                  )}
+                </div>
+              )}
+
+              <p className="mt-2 truncate text-xs text-slate-600" title={a.description}>
+                {a.description}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }
