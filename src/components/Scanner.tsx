@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CircuitBoard,
   Cpu,
+  Download,
   Gpu,
   HardDrive,
   MemoryStick,
@@ -11,7 +12,8 @@ import {
   RefreshCw,
   Thermometer,
 } from "lucide-react";
-import { scanSystem } from "../lib/api";
+import { save } from "@tauri-apps/plugin-dialog";
+import { exportSystemReport, scanSystem } from "../lib/api";
 import { formatBytes, formatFrequency } from "../lib/format";
 import type { HardwareInfo, ProcessInfo } from "../lib/types";
 import { errMsg } from "../lib/errors";
@@ -49,6 +51,8 @@ export function Scanner() {
   const [info, setInfo] = useState<HardwareInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportedPath, setExportedPath] = useState<string | null>(null);
 
   const rescan = useCallback(async () => {
     setLoading(true);
@@ -66,6 +70,28 @@ export function Scanner() {
     void rescan();
   }, [rescan]);
 
+  async function onExport(format: "html" | "json") {
+    const ext = format === "html" ? "html" : "json";
+    const stamp = new Date().toISOString().slice(0, 10);
+    const selected = await save({
+      title: "Export system report",
+      defaultPath: `optix-system-report-${stamp}.${ext}`,
+      filters: [{ name: format.toUpperCase(), extensions: [ext] }],
+    });
+    if (!selected) return;
+    setExporting(true);
+    setError(null);
+    setExportedPath(null);
+    try {
+      const result = await exportSystemReport(selected, format);
+      setExportedPath(result.path);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const processes = [...(info?.processes ?? [])]
     .sort((a, b) => b.cpuUsagePercent - a.cpuUsagePercent)
     .slice(0, 20);
@@ -75,7 +101,7 @@ export function Scanner() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-end justify-between">
+      <header className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-100">System Scanner</h1>
           <p className="text-sm text-slate-500">
@@ -84,15 +110,42 @@ export function Scanner() {
               : "Scanning hardware and software…"}
           </p>
         </div>
-        <button
-          onClick={rescan}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Rescan
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => void onExport("json")}
+            disabled={loading || exporting || info == null}
+            className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            {exporting ? "Exporting…" : "Export JSON"}
+          </button>
+          <button
+            onClick={() => void onExport("html")}
+            disabled={loading || exporting || info == null}
+            className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            Export HTML
+          </button>
+          <button
+            onClick={rescan}
+            disabled={loading || exporting}
+            className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Rescan
+          </button>
+        </div>
       </header>
+
+      {exportedPath && (
+        <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+          <Download className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+          <span className="min-w-0">
+            Report exported to <span className="break-all font-mono text-xs">{exportedPath}</span>
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">

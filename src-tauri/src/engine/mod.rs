@@ -8,6 +8,7 @@ pub mod games;
 pub mod gpu;
 pub mod network;
 pub mod optimizer;
+pub mod report;
 pub mod power;
 pub mod processes;
 pub mod rollback;

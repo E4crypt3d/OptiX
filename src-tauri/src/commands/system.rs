@@ -5,7 +5,7 @@ use sysinfo::{Disks, Networks, System};
 
 use crate::db::sqlite::Database;
 use crate::error::{OptixError, Result};
-use crate::models::app::AppInfo;
+use crate::models::app::{AppInfo, SystemReportExport};
 use crate::models::hardware::*;
 use crate::win;
 
@@ -347,4 +347,45 @@ pub fn app_info() -> AppInfo {
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default(),
     }
+}
+
+/// Export a full system scan as a self-contained HTML page or pretty JSON to
+/// the given path. The scan runs on a blocking thread; the write is atomic
+/// (temp file + rename) so a partial report never masquerades as a complete
+/// one.
+#[tauri::command]
+pub async fn export_system_report(path: String, format: String) -> Result<SystemReportExport> {
+    let format = format.to_ascii_lowercase();
+    if format != "html" && format != "json" {
+        return Err(OptixError::InvalidState(format!(
+            "unsupported report format: {format}"
+        )));
+    }
+    if path.trim().is_empty() {
+        return Err(OptixError::InvalidState(
+            "report export path must not be empty".into(),
+        ));
+    }
+
+    let info = tauri::async_runtime::spawn_blocking(scan_system_blocking)
+        .await
+        .map_err(|e| OptixError::Other(e.to_string()))??;
+
+    let content = if format == "html" {
+        crate::engine::report::html_report(&info)
+    } else {
+        crate::engine::report::json_report(&info)?
+    };
+    let bytes = content.as_bytes();
+    let target = std::path::PathBuf::from(&path);
+
+    // Atomic write (temp file + rename, cleaned up on failure). Bare
+    // filenames are written relative to the current directory.
+    crate::engine::report::write_atomic(&target, bytes)?;
+
+    Ok(SystemReportExport {
+        path: target.to_string_lossy().into_owned(),
+        size_bytes: bytes.len() as u64,
+        format,
+    })
 }
