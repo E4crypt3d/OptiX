@@ -15,7 +15,6 @@ import {
   Sparkles,
   Trash2,
   Undo2,
-  Zap,
 } from "lucide-react";
 
 export type ViewId =
@@ -36,7 +35,7 @@ export type ViewId =
   | "diagnostics"
   | "settings";
 
-const NAV: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
+export const NAV: { id: ViewId; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "scanner", label: "System Scanner", icon: ScanSearch },
   { id: "snapshots", label: "Snapshots", icon: Archive },
@@ -65,9 +64,7 @@ export function Sidebar({
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-slate-800 bg-slate-950/60">
       <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-violet-500">
-          <Zap className="h-5 w-5 text-white" strokeWidth={2.5} />
-        </div>
+        <img src="/logo-no-bg.png" alt="Optix" className="h-11 w-11 shrink-0" />
         <div>
           <div className="text-lg font-bold tracking-tight text-slate-100">
             Optix
@@ -79,13 +76,18 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-2">
-        {NAV.map(({ id, label, icon: Icon }) => {
+        {NAV.map(({ id, label, icon: Icon }, index) => {
           const isActive = id === active;
+          // First nine views are reachable with Ctrl/Cmd+1..9; show the hint
+          // on hover and expose it to assistive tech via aria-keyshortcuts.
+          const shortcut = index < 9 ? `Control+${index + 1}` : undefined;
           return (
             <button
               key={id}
               onClick={() => onNavigate(id)}
               aria-current={isActive ? "page" : undefined}
+              aria-keyshortcuts={shortcut}
+              title={shortcut ? `${label} (${shortcut.replace("Control", "Ctrl")})` : undefined}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 isActive
                   ? "bg-slate-800/80 text-slate-100"
@@ -93,7 +95,12 @@ export function Sidebar({
               }`}
             >
               <Icon className="h-4 w-4" />
-              {label}
+              <span className="flex-1 truncate text-left">{label}</span>
+              {shortcut && (
+                <kbd className="text-[10px] font-normal text-slate-600">
+                  {shortcut.replace("Control", "Ctrl")}
+                </kbd>
+              )}
             </button>
           );
         })}
