@@ -139,13 +139,16 @@ pub(crate) fn scan_system_blocking() -> Result<HardwareInfo> {
         .collect();
 
     let components = sysinfo::Components::new_with_refreshed_list();
-    let temperatures: Vec<TemperatureInfo> = components
+    let mut temperatures: Vec<TemperatureInfo> = components
         .iter()
         .map(|c| TemperatureInfo {
             label: c.label().to_string(),
             celsius: c.temperature(),
         })
         .collect();
+    // sysinfo's `Components` is empty on Windows (no sensor driver access), so
+    // ACPI thermal zones from WMI fill the Temperatures card there.
+    temperatures.extend(win::hardware::temperatures());
 
     // Motherboard/BIOS/edition share one Windows WMI connection (Linux reads
     // DMI); GPU/display/startup detection is also cross-platform now.
@@ -288,8 +291,8 @@ pub fn record_sample(
         elapsed
     };
     networks.refresh(true);
-    let down_bytes = networks.iter().map(|(_, d)| d.received()).sum::<u64>();
-    let up_bytes = networks.iter().map(|(_, d)| d.transmitted()).sum::<u64>();
+    let down_bytes = networks.values().map(|d| d.received()).sum::<u64>();
+    let up_bytes = networks.values().map(|d| d.transmitted()).sum::<u64>();
 
     // Bytes since the last refresh, divided by the actual elapsed time, in
     // bits/sec for the `hardware_history` schema.

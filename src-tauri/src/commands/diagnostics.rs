@@ -48,8 +48,8 @@ fn collect_input(benchmarks: Vec<BenchmarkSnapshot>) -> DiagnosticInput {
 
     let processes: Vec<ProcessSnapshot> = sys
         .processes()
-        .iter()
-        .map(|(_, p)| ProcessSnapshot {
+        .values()
+        .map(|p| ProcessSnapshot {
             name: p.name().to_string_lossy().into_owned(),
             cpu_usage: p.cpu_usage(),
             memory_bytes: p.memory(),
@@ -72,10 +72,17 @@ fn collect_input(benchmarks: Vec<BenchmarkSnapshot>) -> DiagnosticInput {
         })
         .min_by(|a, b| a.total_cmp(b));
 
-    let temperatures: Vec<(String, f32)> = Components::new_with_refreshed_list()
+    let mut temperatures: Vec<(String, f32)> = Components::new_with_refreshed_list()
         .iter()
         .filter_map(|c| c.temperature().map(|t| (c.label().to_string(), t)))
         .collect();
+    // Windows: sysinfo has no sensor access, so ACPI thermal zones from WMI
+    // back the high-temperature diagnostic.
+    temperatures.extend(
+        crate::win::hardware::temperatures()
+            .into_iter()
+            .filter_map(|t| t.celsius.map(|c| (t.label, c))),
+    );
 
     let crashes: Vec<CrashSnapshot> = crash::scan_crashes()
         .into_iter()

@@ -11,6 +11,35 @@ pub struct VideoControllerInfo {
     pub adapter_ram_bytes: u64,
 }
 
+/// One ACPI thermal zone reading from `MSAcpi_ThermalZoneTemperature`.
+#[cfg(windows)]
+pub struct ThermalZoneReading {
+    pub label: String,
+    /// Degrees Celsius; `None` when the zone reports no valid reading.
+    pub celsius: Option<f32>,
+}
+
+/// Convert `CurrentTemperature` (tenths of a degree Kelvin) to Celsius,
+/// returning `None` for the sentinel values some zones report when no sensor
+/// is present (0 K, `-1`, or out-of-range garbage).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn thermal_zone_celsius(deci_kelvin: u32) -> Option<f32> {
+    let celsius = deci_kelvin as f32 / 10.0 - 273.15;
+    (celsius > -100.0 && celsius < 150.0).then_some(celsius)
+}
+
+/// Human-readable label for a thermal zone `InstanceName` such as
+/// `ACPI\ThermalZone\TZ00_0`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn thermal_zone_label(instance_name: &str) -> String {
+    instance_name
+        .rsplit('\\')
+        .next()
+        .filter(|tail| !tail.is_empty())
+        .map(|tail| format!("Thermal zone {tail}"))
+        .unwrap_or_else(|| "Thermal zone".to_string())
+}
+
 /// Motherboard / BIOS / OS edition, fetched together because they share one
 /// WMI connection (each `WMIConnection::new()` costs tens of milliseconds).
 #[derive(Debug, Default)]
@@ -146,6 +175,32 @@ mod imp {
             .collect()
     }
 
+    /// ACPI thermal zones from the `root\WMI` namespace. sysinfo's
+    /// `Components` returns nothing on Windows (no driver-backed sensor
+    /// access), so this is the built-in source for the Temperatures card.
+    pub fn thermal_zone_temperatures() -> Vec<ThermalZoneReading> {
+        let Ok(conn) = WMIConnection::with_namespace_path("ROOT\\WMI") else {
+            return Vec::new();
+        };
+        let Ok(rows) = conn.raw_query(
+            "SELECT InstanceName, CurrentTemperature FROM MSAcpi_ThermalZoneTemperature",
+        ) else {
+            return Vec::new();
+        };
+        rows.into_iter()
+            .filter_map(|m| {
+                let label = get_string(&m, "InstanceName")
+                    .map(|name| thermal_zone_label(&name))
+                    .unwrap_or_else(|| "Thermal zone".to_string());
+                let celsius = get_u32(&m, "CurrentTemperature").and_then(thermal_zone_celsius);
+                celsius.map(|celsius| ThermalZoneReading {
+                    label,
+                    celsius: Some(celsius),
+                })
+            })
+            .collect()
+    }
+
     /// Motherboard, BIOS, and OS edition from a single WMI connection.
     pub fn system_hardware() -> SystemHardware {
         let Ok(conn) = WMIConnection::new() else {
@@ -181,4 +236,28 @@ mod imp {
 }
 
 #[cfg(windows)]
-pub use imp::{physical_disks, system_hardware, video_controllers};
+pub use imp::{physical_disks, system_hardware, thermal_zone_temperatures, video_controllers};
+
+#[cfg(test)]
+mod tests {
+    use super::{thermal_zone_celsius, thermal_zone_label};
+
+    #[test]
+    fn thermal_zone_celsius_conversion() {
+        // 3012 deciKelvin = 301.2 K = 28.05 °C (f32 rounding-tolerant).
+        let celsius = thermal_zone_celsius(3012).expect("valid reading");
+        assert!((celsius - 28.05).abs() < 0.001);
+        // Sentinel / unavailable values are dropped.
+        assert_eq!(thermal_zone_celsius(0), None);
+        assert_eq!(thermal_zone_celsius(0xFFFF_FFFF), None);
+    }
+
+    #[test]
+    fn thermal_zone_labels() {
+        assert_eq!(
+            thermal_zone_label(r"ACPI\ThermalZone\TZ00_0"),
+            "Thermal zone TZ00_0"
+        );
+        assert_eq!(thermal_zone_label(""), "Thermal zone");
+    }
+}

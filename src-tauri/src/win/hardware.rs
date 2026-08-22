@@ -1,7 +1,7 @@
 //! Windows-specific hardware/software detection: GPUs and display settings
 //! (registry + GDI) and startup applications (registry Run keys).
 
-use crate::models::hardware::{DisplayInfo, GpuInfo, PhysicalDiskInfo, StartupApp};
+use crate::models::hardware::{DisplayInfo, GpuInfo, PhysicalDiskInfo, StartupApp, TemperatureInfo};
 #[cfg(not(windows))]
 use crate::models::hardware::{BiosInfo, MotherboardInfo};
 
@@ -278,7 +278,7 @@ fn sysfs_vram_map() -> Vec<(String, u64)> {
                 .and_then(|s| {
                     s.lines().find_map(|line| {
                         let rest = line.trim().strip_prefix("Video Memory :")?;
-                        let mib: u64 = rest.trim().split_whitespace().next()?.parse().ok()?;
+                        let mib: u64 = rest.split_whitespace().next()?.parse().ok()?;
                         Some(mib * 1024 * 1024)
                     })
                 });
@@ -426,7 +426,7 @@ pub fn displays() -> Vec<DisplayInfo> {
 fn parse_display_mode(mode: &str) -> Option<(u32, u32, u32)> {
     // "3840x2160 60.00 3840 4080 4480 5120 2160 2163 2168 2200 193000" →
     // (3840, 2160, 60). Lines without a parseable rate keep refresh 0.
-    let mut fields = mode.trim().split_whitespace();
+    let mut fields = mode.split_whitespace();
     let (width, height) = fields.next()?.split_once('x')?;
     let refresh_rate = fields
         .next()
@@ -620,6 +620,26 @@ fn classify_bus(name: &str, device_path: &str) -> String {
     } else {
         "Unknown".to_string()
     }
+}
+
+/// Temperature sensors. Windows: ACPI thermal zones via WMI
+/// (`MSAcpi_ThermalZoneTemperature`) — sysinfo's `Components` has no sensor
+/// access on Windows and always returns an empty list there. Linux: sysinfo
+/// `Components` (sysfs hwmon) is read by the caller, so this adds nothing.
+#[cfg(windows)]
+pub fn temperatures() -> Vec<TemperatureInfo> {
+    crate::win::wmi::thermal_zone_temperatures()
+        .into_iter()
+        .map(|t| TemperatureInfo {
+            label: t.label,
+            celsius: t.celsius,
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+pub fn temperatures() -> Vec<TemperatureInfo> {
+    Vec::new()
 }
 
 /// Motherboard, BIOS, and OS edition, detected together. Windows: one WMI
