@@ -447,20 +447,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn version_macro_matches_sdk_math() {
-        #[cfg(windows)]
-        {
-            assert_eq!(version_of::<NvProfile>(1), 4116 | (1 << 16));
-            assert_eq!(version_of::<NvSetting>(1), 12320 | (1 << 16));
-            assert_eq!(version_of::<NvApplication>(4), 20492 | (4 << 16));
-        }
-        #[cfg(not(windows))]
-        {
-            // size_of must still be right on the dev host — the layout check
-            // above already covers that, and the macro math is trivially
-            // `size | (ver << 16)`.
-            assert!(true);
-        }
+        assert_eq!(version_of::<NvProfile>(1), 4116 | (1 << 16));
+        assert_eq!(version_of::<NvSetting>(1), 12320 | (1 << 16));
+        assert_eq!(version_of::<NvApplication>(4), 20492 | (4 << 16));
     }
 
     #[test]
