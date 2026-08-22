@@ -82,6 +82,14 @@ const CATEGORIES: &[CategoryDef] = &[
         policy: Policy::All,
     },
     CategoryDef {
+        id: "launcher_cache",
+        name: "Game launcher cache",
+        description: "Steam, Epic Games, Battle.net, and GOG Galaxy web/app caches. Rebuilt on next launcher start.",
+        safety: Safety::Safe,
+        expected_rebuild: true,
+        policy: Policy::All,
+    },
+    CategoryDef {
         id: "crash_dumps",
         name: "Crash dumps",
         description: "Application and system minidumps (keeps the newest).",
@@ -347,6 +355,7 @@ fn category_paths(id: &str) -> Vec<PathBuf> {
             .collect(),
         "browser_cache" => browser_cache_paths(),
         "shader_cache" => shader_cache_paths(),
+        "launcher_cache" => launcher_cache_paths(),
         "crash_dumps" => crash_dump_paths(),
         "app_logs" => app_log_paths(),
         "update_leftovers" => update_leftover_paths(),
@@ -514,6 +523,41 @@ fn shader_cache_paths() -> Vec<PathBuf> {
     }
 }
 
+/// Web/app caches for the common game launchers. Only well-known cache
+/// directories are listed — nothing that holds login state, downloads, or
+/// installed-game data. All are rebuilt by the launcher on next start.
+fn launcher_cache_paths() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        let Some(lad) = local_app_data() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        // Steam: HTTP cache + HTML (CEF) cache.
+        for p in [
+            lad.join(r"Steam\appcache"),
+            lad.join(r"Steam\htmlcache"),
+            lad.join(r"Steam\logs"),
+            // Epic Games Launcher (Chromium web cache + temp log cache).
+            lad.join(r"EpicGamesLauncher\WebCache"),
+            lad.join(r"EpicGamesLauncher\Saved\Logs"),
+            // Battle.net desktop app cache.
+            lad.join(r"Battle.net\Cache"),
+            // GOG Galaxy web cache.
+            lad.join(r"GOG.com\Galaxy\webcache"),
+        ] {
+            if p.is_dir() {
+                out.push(p);
+            }
+        }
+        out
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
 fn crash_dump_paths() -> Vec<PathBuf> {
     #[cfg(windows)]
     {
@@ -628,14 +672,14 @@ mod tests {
         ];
         let selected = apply_policy(&entries, Policy::KeepNewest(1));
         assert_eq!(selected.len(), 2);
-        assert!(selected.iter().all(|e| e.path != PathBuf::from("new")));
+        assert!(selected.iter().all(|e| e.path != Path::new("new")));
     }
 
     #[test]
     fn validates_cleanup_ids_before_mutation() {
         assert!(validate_ids(&[]).is_err());
         assert!(validate_ids(&["not_a_category".to_string()]).is_err());
-        assert!(validate_ids(&["user_temp".to_string(), "shader_cache".to_string()]).is_ok());
+        assert!(validate_ids(&["user_temp".to_string(), "shader_cache".to_string(), "launcher_cache".to_string()]).is_ok());
     }
 
     #[test]
