@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Monitor, RefreshCw, Trash2 } from "lucide-react";
+import { Monitor, RefreshCw, Thermometer, Activity, Trash2 } from "lucide-react";
 import {
   clearShaderCaches,
   getAmdShaderCache,
@@ -186,9 +186,37 @@ export function Gpu() {
                     {a.driverVersion ? ` · driver ${a.driverVersion}` : ""}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="tabular-nums text-slate-200">{formatBytes(a.memoryBytes)}</div>
-                  <div className="text-xs text-slate-500">VRAM</div>
+                <div className="flex shrink-0 gap-4 text-right">
+                  {a.usagePercent != null && (
+                    <div>
+                      <div className="flex items-center gap-1 tabular-nums text-slate-200">
+                        <Activity className="h-3 w-3 text-cyan-400" />
+                        {Math.round(a.usagePercent)}%
+                      </div>
+                      <div className="text-xs text-slate-500">Usage</div>
+                    </div>
+                  )}
+                  {a.temperatureCelsius != null && (
+                    <div>
+                      <div className="flex items-center gap-1 tabular-nums text-slate-200">
+                        <Thermometer className="h-3 w-3 text-amber-400" />
+                        {Math.round(a.temperatureCelsius)}°C
+                      </div>
+                      <div className="text-xs text-slate-500">Temp</div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="tabular-nums text-slate-200">
+                      {a.memoryUsedBytes != null ? (
+                        <>
+                          {formatBytes(a.memoryUsedBytes)} / {formatBytes(a.memoryBytes)}
+                        </>
+                      ) : (
+                        formatBytes(a.memoryBytes)
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-500">VRAM</div>
+                  </div>
                 </div>
               </li>
             ))}

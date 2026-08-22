@@ -429,6 +429,9 @@ export interface GpuAdapter {
   vendor: string;
   driverVersion: string;
   memoryBytes: number;
+  memoryUsedBytes: number | null;
+  temperatureCelsius: number | null;
+  usagePercent: number | null;
 }
 
 export interface GamingToggle {

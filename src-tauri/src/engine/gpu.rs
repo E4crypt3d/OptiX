@@ -407,17 +407,21 @@ fn walk(dir: &PathBuf, visit: &mut impl FnMut(&fs::Metadata)) {
     }
 }
 
-/// Detected display adapters. VRAM is filled by `win::hardware::detect_gpus`
-/// (registry on Windows, sysfs/proc on Linux) — WMI's 32-bit `AdapterRAM` is
-/// no longer consulted because it caps at 4 GiB.
+/// Detected display adapters with live telemetry (VRAM, temperature, usage).
 pub fn list_adapters() -> Vec<GpuAdapter> {
     win::hardware::detect_gpus()
         .into_iter()
-        .map(|g| GpuAdapter {
-            name: g.name,
-            vendor: g.vendor,
-            driver_version: g.driver_version,
-            memory_bytes: g.memory_bytes,
+        .map(|g| {
+            let live = win::gpu::live_telemetry(&g.name, &g.vendor);
+            GpuAdapter {
+                name: g.name,
+                vendor: g.vendor,
+                driver_version: g.driver_version,
+                memory_bytes: g.memory_bytes,
+                memory_used_bytes: live.memory_used,
+                temperature_celsius: live.temperature,
+                usage_percent: live.usage,
+            }
         })
         .collect()
 }

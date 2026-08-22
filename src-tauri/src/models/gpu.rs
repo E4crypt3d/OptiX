@@ -49,14 +49,21 @@ pub struct CacheClearResult {
     pub files_removed: u64,
 }
 
-/// A detected display adapter.
+/// A detected display adapter with live telemetry.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GpuAdapter {
     pub name: String,
     pub vendor: String,
     pub driver_version: String,
+    /// Total dedicated VRAM in bytes (0 if unknown).
     pub memory_bytes: u64,
+    /// Current VRAM usage in bytes (None if unsupported).
+    pub memory_used_bytes: Option<u64>,
+    /// GPU core temperature in Celsius (None if unsupported).
+    pub temperature_celsius: Option<f32>,
+    /// GPU core utilization percent 0–100 (None if unsupported).
+    pub usage_percent: Option<f32>,
 }
 
 /// AMD shader cache mode (registry `UMD\ShaderCache`).
