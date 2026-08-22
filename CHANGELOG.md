@@ -5,6 +5,28 @@ All notable changes to Optix will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-08-22
+
+### Added
+
+- **Live GPU stats**: the GPU page now shows each adapter's usage,
+  temperature, and how much of its VRAM is currently in use, next to total
+  VRAM. Live on Windows for NVIDIA cards and on Linux for AMD / Intel /
+  NVIDIA cards; adapters that don't report a value simply hide it.
+- **Temperatures now work on Windows**: the Temperatures card and the
+  high-temperature diagnostic read real values from your system's thermal
+  sensors. Previously this stayed empty on Windows.
+- **More reliable scheduled-task list**: scheduled tasks are now read through
+  PowerShell's structured interface, so names, statuses, and run times stay
+  correct no matter what language Windows is set to. The old method remains
+  as a fallback.
+
+### Fixed
+
+- Fixed a bug where launching Optix opened two windows of the app instead of
+  one when Windows asked for administrator approval.
+- Fixed a bug where NVIDIA GPU temperature and usage could never be detected.
+
 ## [0.19.0] - 2026-08-20
 
 ### Fixed

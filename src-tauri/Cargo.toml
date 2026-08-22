@@ -1,6 +1,6 @@
 [package]
 name = "optix"
-version = "0.19.0"
+version = "0.20.0"
 description = "Windows gaming performance optimization and system recovery utility"
 authors = ["e4crypt3d"]
 edition = "2021"
