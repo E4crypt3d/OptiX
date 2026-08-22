@@ -98,7 +98,9 @@ pub fn start_type_str(v: u32) -> &'static str {
     }
 }
 
-/// Map a settable start-type string back to its `Start` DWORD.
+/// Map a settable start-type string back to its `Start` DWORD (Windows-only;
+/// Linux maps `auto`/`disabled` to systemctl enable/disable directly).
+#[cfg(any(windows, test))]
 pub fn start_type_value(s: &str) -> Option<u32> {
     match s {
         "auto" => Some(2),

@@ -2,6 +2,18 @@
 
 use serde::Serialize;
 
+/// Result of exporting a system report to a file.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemReportExport {
+    /// Full path the report was written to.
+    pub path: String,
+    /// Bytes written.
+    pub size_bytes: u64,
+    /// "html" | "json"
+    pub format: String,
+}
+
 /// Read-only app metadata: version and the on-disk data locations Optix uses.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

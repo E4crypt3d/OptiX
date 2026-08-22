@@ -92,7 +92,13 @@ fn rollback_change(change: &ChangeRecord) -> Result<RollbackOutcome> {
             RollbackOutcome::Reverted
         }
         "service" => {
-            crate::win::services::rollback_service(change)?;
+            rollback_service_platform(change)?;
+            RollbackOutcome::Reverted
+        }
+        // Linux startup toggles write a `Hidden=` flag (or a user shadow copy
+        // for system entries); toggling the opposite way restores it.
+        "startup" => {
+            crate::linux::startup::set_enabled(&change.location, change.kind != "enable")?;
             RollbackOutcome::Reverted
         }
         "gpu" => {
@@ -113,6 +119,23 @@ fn rollback_change(change: &ChangeRecord) -> Result<RollbackOutcome> {
         }
     };
     Ok(outcome)
+}
+
+/// Platform-dispatched service rollback (SCM on Windows, systemd on Linux).
+fn rollback_service_platform(change: &ChangeRecord) -> Result<()> {
+    #[cfg(windows)]
+    {
+        crate::win::services::rollback_service(change)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        crate::linux::services::rollback_service(change)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = change;
+        Err(OptixError::UnsupportedPlatform("service rollback".into()))
+    }
 }
 
 /// Structural diff of two snapshots' JSON files.

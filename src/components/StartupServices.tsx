@@ -35,8 +35,8 @@ function classTone(c: ServiceClass): "rose" | "emerald" | "slate" {
 }
 
 function stateTone(state: string): "emerald" | "slate" | "amber" {
-  if (state === "running") return "emerald";
-  if (state === "stopped") return "slate";
+  if (state === "running" || state === "active") return "emerald";
+  if (state === "stopped" || state === "inactive") return "slate";
   return "amber";
 }
 
@@ -54,6 +54,9 @@ function signatureTone(sig: string): "rose" | "emerald" | "slate" | "amber" {
 }
 
 export function StartupServices() {
+  // The platform gate is gone: the backend now returns real data on Windows
+  // (SCM/registry/schtasks) and Linux (systemd/XDG/cron). WSearch stays
+  // Windows-only because it's a Windows service.
   const isWindows =
     typeof navigator !== "undefined" && /windows|win32/i.test(navigator.userAgent);
   const [services, setServices] = useState<ServiceInfo[]>([]);
@@ -71,22 +74,26 @@ export function StartupServices() {
     setLoading(true);
     setError(null);
     try {
-      const [s, st, t, w] = await Promise.all([
-        listServices(),
-        listStartup(),
-        listScheduledTasks(),
-        getWsearch(),
-      ]);
+      const [s, st, t] = await Promise.all([listServices(), listStartup(), listScheduledTasks()]);
       setServices(s);
       setStartup(st);
       setTasks(t);
-      setWsearchStatus(w);
+      // Windows Search only exists on Windows; the command is a no-op elsewhere.
+      if (isWindows) {
+        try {
+          setWsearchStatus(await getWsearch());
+        } catch {
+          setWsearchStatus(null);
+        }
+      } else {
+        setWsearchStatus(null);
+      }
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isWindows]);
 
   useEffect(() => {
     void refresh();
@@ -149,7 +156,15 @@ export function StartupServices() {
     );
   }
 
-  const settableStartTypes = ["auto", "manual", "disabled"];
+  // Windows services accept auto/manual/disabled; systemd units accept
+  // auto (enable) / disabled (disable). `static` and `masked` are read-only.
+  const settableStartTypes = isWindows ? ["auto", "manual", "disabled"] : ["auto", "disabled"];
+
+  function startupSourceTone(source: string): "cyan" | "emerald" | "slate" {
+    if (source === "registry" || source === "xdg_user") return "cyan";
+    if (source === "xdg_system") return "slate";
+    return "slate";
+  }
 
   return (
     <div className="space-y-4">
@@ -181,71 +196,70 @@ export function StartupServices() {
         </div>
       )}
 
-      <Card title="Windows Search Index">
-        {!isWindows ? (
-          <p className="text-sm text-slate-500">
-            Windows Search is a Windows service; it can't be controlled on this
-            platform.
-          </p>
-        ) : wsearch ? (
-          <div className="flex items-center gap-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800">
-              <Search className="h-4 w-4 text-cyan-400" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-slate-200">Search Indexer (WSearch)</span>
-                {wsearch.running ? (
-                  <Badge tone="emerald">running</Badge>
-                ) : (
-                  <Badge tone="slate">stopped</Badge>
-                )}
+      {isWindows && (
+        <Card title="Windows Search Index">
+          {wsearch ? (
+            <div className="flex items-center gap-4">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-800">
+                <Search className="h-4 w-4 text-cyan-400" />
               </div>
-              <p className="mt-0.5 text-xs text-slate-500">
-                Disabling frees RAM and background disk activity, but slows Start-menu and
-                Explorer search. Start type: {wsearch.startType}.
-              </p>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-slate-200">Search Indexer (WSearch)</span>
+                  {wsearch.running ? (
+                    <Badge tone="emerald">running</Badge>
+                  ) : (
+                    <Badge tone="slate">stopped</Badge>
+                  )}
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Disabling frees RAM and background disk activity, but slows Start-menu and
+                  Explorer search. Start type: {wsearch.startType}.
+                </p>
+              </div>
+              <button
+                onClick={onToggleWsearch}
+                disabled={busy === "wsearch"}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:opacity-50 ${
+                  wsearch.enabled
+                    ? "bg-rose-600 hover:bg-rose-500"
+                    : "bg-cyan-600 hover:bg-cyan-500"
+                }`}
+              >
+                {busy === "wsearch" ? "…" : wsearch.enabled ? "Disable" : "Enable"}
+              </button>
             </div>
-            <button
-              onClick={onToggleWsearch}
-              disabled={busy === "wsearch"}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium text-white transition-colors disabled:opacity-50 ${
-                wsearch.enabled
-                  ? "bg-rose-600 hover:bg-rose-500"
-                  : "bg-cyan-600 hover:bg-cyan-500"
-              }`}
-            >
-              {busy === "wsearch" ? "…" : wsearch.enabled ? "Disable" : "Enable"}
-            </button>
-          </div>
-        ) : loading ? (
-          <p className="text-sm text-slate-500">Loading…</p>
-        ) : (
-          <p className="text-sm text-slate-500">
-            Couldn't read the Windows Search service state.
-          </p>
-        )}
-      </Card>
+          ) : loading ? (
+            <p className="text-sm text-slate-500">Loading…</p>
+          ) : (
+            <p className="text-sm text-slate-500">
+              Couldn't read the Windows Search service state.
+            </p>
+          )}
+        </Card>
+      )}
 
       <Card title={`Scheduled Tasks (${tasks.length})`}>
-        {!isWindows ? (
-          <p className="text-sm text-slate-500">
-            Scheduled tasks are only enumerated on Windows; nothing is listed on
-            this platform.
-          </p>
+        {loading && tasks.length === 0 ? (
+          <p className="text-sm text-slate-500">Loading…</p>
         ) : tasks.length === 0 ? (
-          <p className="text-sm text-slate-500">No scheduled tasks found.</p>
+          <p className="text-sm text-slate-500">
+            {isWindows
+              ? "No scheduled tasks found."
+              : "No systemd timers or cron jobs found."}
+          </p>
         ) : (
           <ul className="max-h-72 divide-y divide-slate-800/60 overflow-y-auto">
             {tasks.map((t) => (
-              <li key={t.name} className="flex items-center gap-3 py-2">
+              <li key={`${t.status}-${t.name}`} className="flex items-center gap-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium text-slate-200">
-                      {t.name.replace(/^\\+/, "")}
+                      {t.name.replace(/^\\\\+/, "")}
                     </span>
                     <Badge tone={signatureTone(t.signature)}>{t.signature}</Badge>
-                    {t.runAs && <Badge tone="violet">{t.runAs}</Badge>}
+                    <Badge tone={t.status === "cron" ? "violet" : "cyan"}>{t.status}</Badge>
+                    {t.runAs && <Badge tone="slate">{t.runAs}</Badge>}
                   </div>
                   <div className="truncate text-xs text-slate-500">
                     {t.action ? (
@@ -257,6 +271,7 @@ export function StartupServices() {
                 </div>
                 <div className="shrink-0 text-right text-xs text-slate-500">
                   {t.nextRun && <div>next: {t.nextRun}</div>}
+                  {t.lastRun && <div>last: {t.lastRun}</div>}
                   {t.author && <div>author: {t.author}</div>}
                 </div>
               </li>
@@ -264,19 +279,30 @@ export function StartupServices() {
           </ul>
         )}
         <p className="mt-3 text-xs text-slate-600">
-          Tasks are read-only. The badge is the Authenticode signature state of the action
-          executable — unsigned or untrusted publishers are worth a closer look.
+          {isWindows ? (
+            <>
+              Tasks are read-only. The badge is the Authenticode signature state of the action
+              executable — unsigned or untrusted publishers are worth a closer look.
+            </>
+          ) : (
+            <>
+              Read-only. systemd timers are listed first; cron jobs are marked{" "}
+              <span className="text-violet-400">cron</span>. There's no code-signing
+              equivalent on Linux, so the signature badge reads unavailable.
+            </>
+          )}
         </p>
       </Card>
 
-      <Card title="Startup Apps">
-        {!isWindows ? (
-          <p className="text-sm text-slate-500">
-            Startup apps are only enumerated on Windows; nothing is listed on
-            this platform.
-          </p>
+      <Card title={`Startup Apps (${startup.length})`}>
+        {loading && startup.length === 0 ? (
+          <p className="text-sm text-slate-500">Loading…</p>
         ) : startup.length === 0 ? (
-          <p className="text-sm text-slate-500">No startup entries found.</p>
+          <p className="text-sm text-slate-500">
+            {isWindows
+              ? "No startup entries found."
+              : "No XDG autostart entries found."}
+          </p>
         ) : (
           <ul className="divide-y divide-slate-800/60">
             {startup.map((e) => (
@@ -284,7 +310,7 @@ export function StartupServices() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-slate-200">{e.name}</span>
-                    <Badge tone={e.source === "registry" ? "cyan" : "slate"}>{e.source}</Badge>
+                    <Badge tone={startupSourceTone(e.source)}>{e.source}</Badge>
                     {e.enabled ? (
                       <Badge tone="emerald">enabled</Badge>
                     ) : (
@@ -309,37 +335,38 @@ export function StartupServices() {
       </Card>
 
       <Card
-        title={`Services${isWindows ? ` (${visible.length} of ${services.length})` : ""}`}
+        title={`Services (${visible.length} of ${services.length})`}
         action={
-          isWindows && (
-            <div className="flex items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.currentTarget.value)}
-                  placeholder="Filter services…"
-                  className="w-52 rounded-lg border border-slate-700 bg-slate-950 py-1.5 pl-7 pr-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none"
-                />
-              </div>
-              <select
-                value={classFilter}
-                onChange={(e) => setClassFilter(e.currentTarget.value as ClassFilter)}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
-              >
-                <option value="all">All</option>
-                <option value="required">Required</option>
-                <option value="safe">Safe</option>
-                <option value="unknown">Unknown</option>
-              </select>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.currentTarget.value)}
+                placeholder="Filter services…"
+                className="w-52 rounded-lg border border-slate-700 bg-slate-950 py-1.5 pl-7 pr-2 text-xs text-slate-100 placeholder:text-slate-600 focus:border-cyan-500 focus:outline-none"
+              />
             </div>
-          )
+            <select
+              value={classFilter}
+              onChange={(e) => setClassFilter(e.currentTarget.value as ClassFilter)}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none"
+            >
+              <option value="all">All</option>
+              <option value="required">Required</option>
+              <option value="safe">Safe</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </div>
         }
       >
-        {!isWindows ? (
+        {loading && services.length === 0 ? (
+          <p className="text-sm text-slate-500">Loading…</p>
+        ) : services.length === 0 ? (
           <p className="text-sm text-slate-500">
-            Service enumeration and control are only available on Windows; nothing
-            is listed on this platform.
+            {isWindows
+              ? "Couldn't enumerate services."
+              : "systemd services couldn't be enumerated (is this a systemd system?)."}
           </p>
         ) : (
           <ul className="max-h-[32rem] divide-y divide-slate-800/60 overflow-y-auto">
@@ -353,8 +380,14 @@ export function StartupServices() {
                     {s.delayedAutoStart && <Badge tone="violet">delayed</Badge>}
                   </div>
                   <div className="truncate text-xs text-slate-500">
-                    {s.description && <span>{s.description} · </span>}
-                    <span className="font-mono">{s.binaryPath}</span>
+                    {s.description && s.description !== s.name && (
+                      <span>
+                        {s.description} ·{" "}
+                      </span>
+                    )}
+                    {s.account && <span>{s.account} · </span>}
+                    {s.binaryPath && <span className="font-mono">{s.binaryPath}</span>}
+                    {!s.binaryPath && <span>binary path unavailable</span>}
                   </div>
                 </div>
 
@@ -383,14 +416,14 @@ export function StartupServices() {
                 {!s.isDriver && (
                   <button
                     onClick={() =>
-                      s.state === "running"
+                      s.state === "running" || s.state === "active"
                         ? run(s.name, () => stopService(s.name), `Stopped ${s.name}.`)
                         : run(s.name, () => startService(s.name), `Started ${s.name}.`)
                     }
-                    disabled={busy === s.name || (s.state === "running" && s.classification === "required")}
+                    disabled={busy === s.name || ((s.state === "running" || s.state === "active") && s.classification === "required")}
                     className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-40"
                   >
-                    {s.state === "running" ? (
+                    {s.state === "running" || s.state === "active" ? (
                       <>
                         <Square className="h-3 w-3" /> Stop
                       </>

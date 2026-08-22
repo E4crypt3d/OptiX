@@ -12,10 +12,15 @@ use crate::models::services::{
     WSearchStatus,
 };
 use crate::models::snapshot::ChangeRecord;
+#[cfg(windows)]
 use crate::win;
+#[cfg(target_os = "linux")]
+use crate::linux;
 
 /// Services Optix must never stop or disable (drivers, boot/system-start and
 /// system-critical services are additionally protected in `classify`).
+/// Windows-specific names; the Linux list lives below.
+#[cfg(windows)]
 const NEVER_FLAG: &[&str] = &[
     "windefend",
     "wscsvc",
@@ -57,8 +62,36 @@ const NEVER_FLAG: &[&str] = &[
     "wlansvc",
 ];
 
+/// Critical systemd units that must never be stopped or disabled. These are
+/// the systemd-resident core (PID-1's own services, D-Bus, login, and the
+/// network stack) — stopping any of them bricks the session.
+#[cfg(target_os = "linux")]
+const LINUX_NEVER_FLAG: &[&str] = &[
+    "systemd",
+    "systemd-journald",
+    "systemd-logind",
+    "systemd-udevd",
+    "systemd-networkd",
+    "systemd-resolved",
+    "systemd-timesyncd",
+    "systemd-tmpfiles-setup",
+    "systemd-tmpfiles-setup-dev",
+    "systemd-user-sessions",
+    "systemd-remount-fs",
+    "systemd-sysctl",
+    "systemd-modules-load",
+    "dbus",
+    "dbus-broker",
+    "dbus-daemon",
+    "polkit",
+    "getty",
+    "login",
+    "user",
+];
+
 /// Services commonly safe to disable for gaming (user confirmation still
 /// required in the UI).
+#[cfg(windows)]
 const SAFE: &[&str] = &[
     "sysmain", // Superfetch — often flagged as a RAM hog
     "diagtrack", // Connected User Experiences and Telemetry
@@ -73,20 +106,44 @@ const SAFE: &[&str] = &[
 /// Classify a service as "required" | "safe" | "unknown".
 pub fn classify(info: &ServiceInfo) -> &'static str {
     let name = info.name.to_ascii_lowercase();
-    if info.is_driver
-        || info.start_type == "boot"
-        || info.start_type == "system"
-        || NEVER_FLAG.contains(&name.as_str())
+    #[cfg(windows)]
     {
-        "required"
-    } else if SAFE.contains(&name.as_str()) {
-        "safe"
-    } else {
+        if info.is_driver
+            || info.start_type == "boot"
+            || info.start_type == "system"
+            || NEVER_FLAG.contains(&name.as_str())
+        {
+            return "required";
+        }
+        if SAFE.contains(&name.as_str()) {
+            return "safe";
+        }
+        return "unknown";
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Masked units can't be re-enabled from the UI; systemd-resident and
+        // core session units are never touchable.
+        if info.start_type == "masked"
+            || LINUX_NEVER_FLAG.contains(&name.as_str())
+            || name.starts_with("systemd-")
+            && !matches!(info.state.as_str(), "stopped")
+        {
+            return "required";
+        }
+        // Nothing is auto-classified "safe" on Linux — the SAFE list is
+        // Windows-specific and a wrong guess is worse than an unknown.
+        "unknown"
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = name;
         "unknown"
     }
 }
 
-/// Enumerate services with classification applied.
+/// Enumerate services with classification applied (platform-dispatched).
+#[cfg(windows)]
 pub fn list_services() -> Vec<ServiceInfo> {
     let mut out = win::services::list_services();
     for s in &mut out {
@@ -100,12 +157,50 @@ pub fn list_services() -> Vec<ServiceInfo> {
     out
 }
 
+#[cfg(target_os = "linux")]
+pub fn list_services() -> Vec<ServiceInfo> {
+    let mut out = linux::services::list_services();
+    for s in &mut out {
+        s.classification = classify(s).to_string();
+    }
+    out.sort_by(|a, b| {
+        a.name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase())
+    });
+    out
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn list_services() -> Vec<ServiceInfo> {
+    Vec::new()
+}
+
 fn find_service(name: &str) -> Option<ServiceInfo> {
     list_services().into_iter().find(|s| s.name == name)
 }
 
 /// Stop a running service (snapshot-first, reversible).
+#[cfg(windows)]
 pub fn stop_service(db: &Database, name: &str) -> Result<ServiceActionResult> {
+    stop_service_impl(db, name, |n| win::services::stop_service(n))
+}
+
+#[cfg(target_os = "linux")]
+pub fn stop_service(db: &Database, name: &str) -> Result<ServiceActionResult> {
+    stop_service_impl(db, name, |n| linux::services::stop_service(n))
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn stop_service(_db: &Database, _name: &str) -> Result<ServiceActionResult> {
+    Err(OptixError::UnsupportedPlatform("services".into()))
+}
+
+fn stop_service_impl(
+    db: &Database,
+    name: &str,
+    stop: impl FnOnce(&str) -> Result<()>,
+) -> Result<ServiceActionResult> {
     let info = find_service(name)
         .ok_or_else(|| OptixError::InvalidState(format!("service not found: {name}")))?;
     guard_mutable(&info)?;
@@ -116,7 +211,7 @@ pub fn stop_service(db: &Database, name: &str) -> Result<ServiceActionResult> {
         });
     }
     let snap = snapshot::create_lightweight(db, &format!("Stop service: {name}"), None)?;
-    win::services::stop_service(name)?;
+    stop(name)?;
     record(
         db,
         &snap.id,
@@ -133,7 +228,26 @@ pub fn stop_service(db: &Database, name: &str) -> Result<ServiceActionResult> {
 }
 
 /// Start a stopped service (snapshot-first, reversible).
+#[cfg(windows)]
 pub fn start_service(db: &Database, name: &str) -> Result<ServiceActionResult> {
+    start_service_impl(db, name, |n| win::services::start_service(n))
+}
+
+#[cfg(target_os = "linux")]
+pub fn start_service(db: &Database, name: &str) -> Result<ServiceActionResult> {
+    start_service_impl(db, name, |n| linux::services::start_service(n))
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn start_service(_db: &Database, _name: &str) -> Result<ServiceActionResult> {
+    Err(OptixError::UnsupportedPlatform("services".into()))
+}
+
+fn start_service_impl(
+    db: &Database,
+    name: &str,
+    start: impl FnOnce(&str) -> Result<()>,
+) -> Result<ServiceActionResult> {
     let info = find_service(name)
         .ok_or_else(|| OptixError::InvalidState(format!("service not found: {name}")))?;
     if info.is_driver {
@@ -148,7 +262,7 @@ pub fn start_service(db: &Database, name: &str) -> Result<ServiceActionResult> {
         });
     }
     let snap = snapshot::create_lightweight(db, &format!("Start service: {name}"), None)?;
-    win::services::start_service(name)?;
+    start(name)?;
     record(
         db,
         &snap.id,
@@ -164,26 +278,43 @@ pub fn start_service(db: &Database, name: &str) -> Result<ServiceActionResult> {
     })
 }
 
-/// Change a service's start type (`auto` | `manual` | `disabled`).
-pub fn set_start_type(
+/// Change a service's start type (`auto` | `manual` | `disabled`;
+/// `auto`/`disabled` on Linux). Snapshot-first, reversible.
+#[cfg(windows)]
+pub fn set_start_type(db: &Database, name: &str, start_type: &str) -> Result<ServiceActionResult> {
+    let value = crate::models::services::start_type_value(start_type)
+        .ok_or_else(|| OptixError::InvalidState(format!("invalid start type: {start_type}")))?;
+    set_start_type_impl(db, name, start_type, |n, _| win::services::set_start_type(n, value))
+}
+
+#[cfg(target_os = "linux")]
+pub fn set_start_type(db: &Database, name: &str, start_type: &str) -> Result<ServiceActionResult> {
+    set_start_type_impl(db, name, start_type, |n, v| linux::services::set_start_type(n, v))
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn set_start_type(_db: &Database, _name: &str, _start_type: &str) -> Result<ServiceActionResult> {
+    Err(OptixError::UnsupportedPlatform("services".into()))
+}
+
+/// Shared start-type change: validate, snapshot, apply, record.
+fn set_start_type_impl(
     db: &Database,
     name: &str,
     start_type: &str,
+    apply: impl FnOnce(&str, &str) -> Result<()>,
 ) -> Result<ServiceActionResult> {
     let info = find_service(name)
         .ok_or_else(|| OptixError::InvalidState(format!("service not found: {name}")))?;
     guard_mutable(&info)?;
-    let value = crate::models::services::start_type_value(start_type)
-        .ok_or_else(|| OptixError::InvalidState(format!("invalid start type: {start_type}")))?;
     if info.start_type == start_type {
         return Ok(ServiceActionResult {
             snapshot_id: String::new(),
             changes: 0,
         });
     }
-    let snap =
-        snapshot::create_lightweight(db, &format!("Service start type: {name}"), None)?;
-    win::services::set_start_type(name, value)?;
+    let snap = snapshot::create_lightweight(db, &format!("Service start type: {name}"), None)?;
+    apply(name, start_type)?;
     record(
         db,
         &snap.id,
@@ -210,7 +341,8 @@ fn guard_mutable(info: &ServiceInfo) -> Result<()> {
     Ok(())
 }
 
-/// Current Windows Search (WSearch) state.
+/// Current Windows Search (WSearch) state — a Windows-only service.
+#[cfg(windows)]
 pub fn wsearch_status() -> WSearchStatus {
     match find_service("WSearch") {
         Some(info) => WSearchStatus {
@@ -226,7 +358,17 @@ pub fn wsearch_status() -> WSearchStatus {
     }
 }
 
+#[cfg(not(windows))]
+pub fn wsearch_status() -> WSearchStatus {
+    WSearchStatus {
+        enabled: false,
+        running: false,
+        start_type: "unknown".to_string(),
+    }
+}
+
 /// Enable/disable Windows Search: set start type and stop/start as needed.
+#[cfg(windows)]
 pub fn set_wsearch(db: &Database, enabled: bool) -> Result<ServiceActionResult> {
     let info = find_service("WSearch")
         .ok_or_else(|| OptixError::InvalidState("WSearch service not found".into()))?;
@@ -287,9 +429,15 @@ pub fn set_wsearch(db: &Database, enabled: bool) -> Result<ServiceActionResult> 
     })
 }
 
-/// Enumerate scheduled tasks, flagging the action executable's Authenticode
-/// signature state (trusted/untrusted/unsigned) — the Phase 6 "unknown
-/// publishers" signal.
+#[cfg(not(windows))]
+pub fn set_wsearch(_db: &Database, _enabled: bool) -> Result<ServiceActionResult> {
+    Err(OptixError::UnsupportedPlatform("Windows Search".into()))
+}
+
+/// Enumerate scheduled tasks. On Windows the action executable's Authenticode
+/// signature state is flagged (trusted/untrusted/unsigned); Linux timers and
+/// cron entries have no equivalent and report "unavailable".
+#[cfg(windows)]
 pub fn list_scheduled_tasks() -> Vec<ScheduledTask> {
     let mut tasks = win::tasks::list_scheduled_tasks();
     for t in &mut tasks {
@@ -304,7 +452,20 @@ pub fn list_scheduled_tasks() -> Vec<ScheduledTask> {
     tasks
 }
 
+#[cfg(target_os = "linux")]
+pub fn list_scheduled_tasks() -> Vec<ScheduledTask> {
+    let mut tasks = linux::tasks::list_scheduled_tasks();
+    tasks.sort_by(|a, b| a.name.cmp(&b.name));
+    tasks
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn list_scheduled_tasks() -> Vec<ScheduledTask> {
+    Vec::new()
+}
+
 /// Resolve the executable from a task action and verify its signature.
+#[cfg(windows)]
 fn task_signature(task: &ScheduledTask) -> String {
     let Some(exe) = action_executable(&task.action) else {
         return "unavailable".to_string();
@@ -323,6 +484,7 @@ fn task_signature(task: &ScheduledTask) -> String {
 /// paths, bare exes, and `cmd.exe /c "..."` wrappers. Pure parse (no disk
 /// check) so it is unit-testable; `task_signature` checks existence before
 /// verifying.
+#[cfg(any(windows, test))]
 fn action_executable(action: &str) -> Option<String> {
     let mut s = action.trim().to_string();
     // Strip a leading `cmd.exe /c ...` wrapper.
@@ -348,16 +510,32 @@ fn action_executable(action: &str) -> Option<String> {
     }
 }
 
+#[cfg(any(windows, test))]
 fn is_exe_path(p: &str) -> bool {
     p.to_ascii_lowercase().ends_with(".exe")
 }
 
-/// Enumerate startup applications.
+/// Enumerate startup applications (registry Run keys + folders on Windows;
+/// XDG autostart on Linux).
+#[cfg(windows)]
 pub fn list_startup() -> Vec<StartupEntry> {
     win::startup::list_entries()
 }
 
-/// Enable or disable a registry startup entry (snapshot-first, reversible).
+#[cfg(target_os = "linux")]
+pub fn list_startup() -> Vec<StartupEntry> {
+    linux::startup::list_entries()
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn list_startup() -> Vec<StartupEntry> {
+    Vec::new()
+}
+
+/// Enable or disable a startup entry (snapshot-first, reversible).
+/// Windows: registry Run value create/delete. Linux: `Hidden=` in the XDG
+/// autostart file (shadow copy for system entries).
+#[cfg(windows)]
 pub fn set_startup_enabled(
     db: &Database,
     location: &str,
@@ -403,6 +581,53 @@ pub fn set_startup_enabled(
         snapshot_id: snap.id,
         changes: 1,
     })
+}
+
+#[cfg(target_os = "linux")]
+pub fn set_startup_enabled(
+    db: &Database,
+    location: &str,
+    enabled: bool,
+    _command: &str,
+) -> Result<StartupActionResult> {
+    if !location.ends_with(".desktop") {
+        return Err(OptixError::InvalidState(format!(
+            "not an XDG autostart file: {location}"
+        )));
+    }
+    let snap = snapshot::create_lightweight(
+        db,
+        if enabled { "Enable startup" } else { "Disable startup" },
+        Some(location),
+    )?;
+
+    let changed = linux::startup::set_enabled(location, enabled)?;
+    // Record the *original* file path (the one the user toggled) as the
+    // location; the written file is what a rollback would remove.
+    record(
+        db,
+        &snap.id,
+        "startup",
+        if enabled { "enable" } else { "disable" },
+        location,
+        Some(if enabled { "disabled" } else { "enabled" }),
+        Some(changed.as_str()),
+    )?;
+
+    Ok(StartupActionResult {
+        snapshot_id: snap.id,
+        changes: 1,
+    })
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn set_startup_enabled(
+    _db: &Database,
+    _location: &str,
+    _enabled: bool,
+    _command: &str,
+) -> Result<StartupActionResult> {
+    Err(OptixError::UnsupportedPlatform("startup apps".into()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -456,6 +681,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn drivers_and_boot_start_are_required() {
         assert_eq!(classify(&svc("somefilter", true, "auto")), "required");
@@ -463,6 +689,7 @@ mod tests {
         assert_eq!(classify(&svc("mydriver", false, "system")), "required");
     }
 
+    #[cfg(windows)]
     #[test]
     fn never_flag_list_is_required() {
         for name in ["WinDefend", "RpcSs", "Dhcp", "Power", "AudioSrv"] {
@@ -470,6 +697,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     #[test]
     fn safe_list_is_safe() {
         for name in ["SysMain", "DiagTrack", "WSearch", "XblAuthManager"] {
