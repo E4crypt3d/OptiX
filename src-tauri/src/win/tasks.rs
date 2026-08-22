@@ -1,6 +1,10 @@
-//! Scheduled-task enumeration (Phase 6) via `schtasks /query /fo CSV /v`.
-//! The Task Scheduler COM API is heavier; schtasks is available on every
-//! Windows edition and its CSV output parses cleanly.
+//! Scheduled-task enumeration (Phase 6).
+//!
+//! Primary: PowerShell `Get-ScheduledTask` — structured, locale-independent
+//! JSON output with stable property names.
+//!
+//! Fallback: `schtasks /query /fo CSV /v` — legacy CSV parser kept for
+//! environments where PowerShell is unavailable or blocked.
 
 use crate::models::services::ScheduledTask;
 
@@ -65,13 +69,102 @@ pub fn split_csv(line: &str) -> Vec<String> {
     out
 }
 
+/// PowerShell script that returns scheduled tasks as a JSON array.
+/// Uses `Get-ScheduledTask` (structured, locale-independent) and joins
+/// `Get-ScheduledTaskInfo` for run-time data.
+#[cfg(windows)]
+const PS_LIST_TASKS: &str = r#"
+$tasks = Get-ScheduledTask -ErrorAction SilentlyContinue
+if (-not $tasks) { Write-Output '[]'; exit }
+$results = foreach ($t in $tasks) {
+    $info = $t | Get-ScheduledTaskInfo -ErrorAction SilentlyContinue
+    [PSCustomObject]@{
+        # TaskPath + TaskName matches schtasks' full-path format, keeps names
+        # unique across folders, and stays consistent with the CSV fallback.
+        Name     = $t.TaskPath + $t.TaskName
+        Status   = $t.State
+        NextRun  = if ($info.NextRunTime -and $info.NextRunTime.Year -gt 1999) { $info.NextRunTime.ToString('g') } else { '' }
+        LastRun  = if ($info.LastRunTime -and $info.LastRunTime.Year -gt 1999) { $info.LastRunTime.ToString('g') } else { '' }
+        Author   = $t.Author
+        Action   = if ($t.Actions.Count -gt 0) { $t.Actions[0].Execute } else { '' }
+        RunAs    = $t.Principal.UserId
+    }
+}
+$results | ConvertTo-Json -Compress
+"#;
+
 /// Enumerate scheduled tasks on Windows (empty elsewhere).
+///
+/// Tries PowerShell `Get-ScheduledTask` first (locale-independent JSON).
+/// Falls back to `schtasks /query /fo CSV /v` if PowerShell is unavailable.
 #[cfg(windows)]
 pub fn list_scheduled_tasks() -> Vec<ScheduledTask> {
+    if let Some(tasks) = list_scheduled_tasks_powershell() {
+        return tasks;
+    }
+    list_scheduled_tasks_schtasks()
+}
+
+/// PowerShell-based enumeration — preferred because output is locale-independent.
+#[cfg(windows)]
+fn list_scheduled_tasks_powershell() -> Option<Vec<ScheduledTask>> {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
-    // Spawn without a console window — a GUI app must not flash one.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let output = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", PS_LIST_TASKS])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    parse_scheduled_tasks_json(&text)
+}
+
+/// Parse the JSON produced by `Get-ScheduledTask | ConvertTo-Json`. The script
+/// emits a bare object for a single task and an array for several, so both
+/// shapes are normalized.
+#[cfg(any(windows, test))]
+fn parse_scheduled_tasks_json(text: &str) -> Option<Vec<ScheduledTask>> {
+    let text = text.trim();
+    if text.is_empty() || text == "[]" {
+        return Some(Vec::new());
+    }
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let values: Vec<&serde_json::Value> = match &value {
+        serde_json::Value::Array(items) => items.iter().collect(),
+        serde_json::Value::Object(_) => vec![&value],
+        _ => return None,
+    };
+    let mut out = Vec::with_capacity(values.len());
+    for v in values {
+        let name = v.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if name.is_empty() {
+            continue;
+        }
+        out.push(ScheduledTask {
+            name,
+            status: v.get("Status").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            next_run: v.get("NextRun").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            last_run: v.get("LastRun").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            author: v.get("Author").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            action: v.get("Action").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            run_as: v.get("RunAs").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            signature: "unavailable".to_string(),
+        });
+    }
+    Some(out)
+}
+
+/// Fallback: schtasks CSV enumeration (legacy, locale-sensitive).
+#[cfg(windows)]
+fn list_scheduled_tasks_schtasks() -> Vec<ScheduledTask> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let output = match Command::new("schtasks.exe")
         .args(["/query", "/fo", "CSV", "/v"])
@@ -119,7 +212,7 @@ pub fn parse_scheduled_task_csv(text: &str) -> Vec<ScheduledTask> {
             || unquoted.to_ascii_lowercase().starts_with("total tasks")
             || unquoted.starts_with("info:")
             || l.starts_with('"')
-                && l.len() > 0
+                && !l.is_empty()
                 && l[1..].trim_start_matches('"').trim_start().is_empty()
         {
             continue;
@@ -187,5 +280,35 @@ mod tests {
         let tasks = parse_scheduled_task_csv(csv);
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, r"\T1");
+    }
+
+    #[test]
+    fn parses_powershell_json_array() {
+        let json = r#"[
+  {"Name":"\\Microsoft\\Windows\\UpdateOrchestrator\\USO_UxBroker","Status":"Ready","NextRun":"8/21/2026 3:00 AM","LastRun":"","Author":"Microsoft Corporation","Action":"%windir%\\system32\\usocoreworker.exe","RunAs":"SYSTEM"},
+  {"Name":"","Status":"Disabled","NextRun":"","LastRun":"","Author":"","Action":"","RunAs":""}
+]"#;
+        let tasks = parse_scheduled_tasks_json(json).expect("parses array");
+        // The row with an empty name is dropped.
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "\\Microsoft\\Windows\\UpdateOrchestrator\\USO_UxBroker");
+        assert_eq!(tasks[0].status, "Ready");
+        assert_eq!(tasks[0].author, "Microsoft Corporation");
+        assert_eq!(tasks[0].action, "%windir%\\system32\\usocoreworker.exe");
+        assert_eq!(tasks[0].run_as, "SYSTEM");
+        assert_eq!(tasks[0].signature, "unavailable");
+    }
+
+    #[test]
+    fn parses_single_object_empty_and_garbage() {
+        // `ConvertTo-Json` emits a bare object when exactly one task matches.
+        let single = r#"{"Name":"\\T1","Status":"Ready","NextRun":"","LastRun":"","Author":"","Action":"","RunAs":""}"#;
+        let tasks = parse_scheduled_tasks_json(single).expect("parses single object");
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "\\T1");
+
+        assert_eq!(parse_scheduled_tasks_json("").expect("empty").len(), 0);
+        assert_eq!(parse_scheduled_tasks_json("[]").expect("empty array").len(), 0);
+        assert!(parse_scheduled_tasks_json("not json").is_none());
     }
 }
