@@ -1,242 +1,100 @@
 # AGENTS.md
 
-## Scope
+Universal engineering rules for AI coding agents working in this repository.
+Scope: the entire repository. A nested `AGENTS.md` overrides these rules for its subtree; direct requests from the user override everything.
 
-These instructions apply to the entire repository unless a more specific `AGENTS.md` exists in a subdirectory.
+## Project
 
-This file defines universal engineering rules for AI agents working in this repository.
+- **Stack:** TypeScript ~5.8 / React 19 frontend (Vite 7, Tailwind CSS v4, Recharts); Rust backend on Tauri v2 (MSRV 1.87) with rusqlite (bundled SQLite), sysinfo, winreg/windows-sys
+- **Source layout:** `src/` React frontend (`components/` one per page, `lib/api.ts` typed invoke wrappers + `lib/types.ts` mirrored serde models); `src-tauri/src/` backend (`main.rs` elevation bootstrap, `lib.rs` registration, `commands/`, `engine/`, `models/`, `db/sqlite.rs` migrations, `win/` behind `#[cfg(windows)]`)
+- **Toolchain:** npm (Node 20+) + Cargo; dev runs through the Tauri CLI; PresentMon fetched by `scripts/fetch-presentmon.ps1`; CI in `.github/workflows/ci.yml`
+- **Key docs:** README.md → module map, safety model, feature pattern `models/ → engine/ → commands/ → registration → frontend types + api + page`
 
----
+## Commands
 
-## Non-negotiable rules
+<!-- Fill in the exact commands from this repo's config (package.json / Makefile / pyproject / justfile). Keep only what applies. Prefer single-test variants so verification stays fast. -->
 
-- Do not modify `AGENTS.md` unless explicitly requested.
-- Do not provide only analysis when the requested change can be implemented — proceed to implementation unless approval is required.
-- Do not rewrite working code without a clear, justified reason.
-- Do not add unnecessary dependencies.
-- Do not introduce unnecessary complexity.
-- Do not add AI-generated filler comments or documentation.
-- Do not claim tests, builds, or verification were completed unless you actually performed them.
-- Preserve existing behavior unless a change is intentional and documented.
+- **Install:** `npm install`
+- **Build:** `npm run build` (runs `tsc && vite build`); installers via `npm run tauri build` (`build:win`, `build:nsis`, `build:linux` variants in package.json)
+- **Dev server:** `npm run tauri dev` (Windows-only modules stubbed on Linux)
+- **Tests (full suite):** `cd src-tauri && cargo test`; Windows-target FFI check: `cd src-tauri && cargo check --target x86_64-pc-windows-gnu`
+- **Tests (single):** `cd src-tauri && cargo test <test_name>`
+- **Typecheck:** `npx tsc --noEmit` (same `tsc` pass as the build; no ESLint/Prettier configured)
 
----
+If a command you need is missing, derive it from the repo's config files, then record it here.
 
-## Repository understanding
+## Workflow
 
-Before making changes, understand the existing system.
+1. **Understand** — read the change site, its tests, and its callers before editing. Confirm assumptions against the implementation; never infer behavior from names alone.
+2. **Plan** — identify the files to change and the risk points. For architectural, breaking, or destructive changes, present the plan and wait for approval. Otherwise proceed directly.
+3. **Implement** — deliver the smallest complete change that fulfills the request. Follow the conventions of each file you edit; reuse existing utilities before adding new ones. Leave no placeholders, stubs, or dead code.
+4. **Verify** — run the relevant commands above until green. Fix what your change broke. Report pre-existing failures separately; leave them unasked.
 
-Inspect relevant:
+## Conventions
 
-- Source code
-- Configuration
-- Documentation
-- Dependencies
-- Tests
-- Build setup
+- Write comments that explain intent, non-obvious behavior, and tradeoffs — the code itself explains the rest:
 
-Identify:
+```text
+// Retry twice: upstream rate-limits bursts (issue #1423)      <- good
+// increment counter                                           <- noise
+```
 
-- Application type
-- Main technologies
-- Existing conventions
-- Architecture patterns
-- Code style
+- Describe what changed in commit messages, never in comments.
 
-Do not assume technology choices from filenames alone — read the actual implementation.
+## Commits
 
-Follow existing project patterns instead of introducing new ones.
+Use conventional commits: `type(scope): description`
 
----
+```text
+feat(api): add export endpoint
+chore(deps): bump minor versions
+```
 
-## Implementation workflow
+For bug fixes, state the defect being repaired — name the method or component and describe the wrong behavior it had:
 
-### Understand
+```text
+fix(auth): fixed a bug where refreshToken method reused expired tokens
+```
 
-Before editing:
+One logical change per commit. Split mixed concerns into separate commits.
 
-- Read the relevant code.
-- Check related files.
-- Understand how the current implementation works.
-
-### Plan
-
-Determine:
-
-- What needs to change.
-- Which files are affected.
-- Potential risks and side effects.
-
-For large architectural changes or risky modifications:
-
-- Explain the plan before implementation.
-- Ask for approval before proceeding.
-
-For normal changes, continue with implementation.
-
-### Implement
-
-When changing code:
-
-- Keep changes focused and atomic.
-- Match existing project style.
-- Reuse existing utilities and patterns.
-- Prefer simple, maintainable solutions.
-- Fully implement the requested functionality.
-
-Avoid:
-
-- Unrelated refactoring.
-- Placeholder or incomplete implementations.
-- New architecture without justification.
-- Removing existing functionality unnecessarily.
-
-### Verify
-
-After changes:
-
-Run appropriate checks when available:
-
-- Tests
-- Type checks
-- Builds
-- Linters
-- Formatters
-
-Report:
-
-- What was verified.
-- Results.
-- Any checks that could not be performed (and why).
-
----
+Strict rule: never append AI credits or generated-by footers to commits — no `Co-Authored-By: ...`, no `Generated with ...`, no tool signature lines of any kind. Commit messages are written by you alone.
 
 ## Dependencies
 
-Before adding dependencies:
+Exhaust existing packages and platform built-ins first. Before adding a dependency, confirm need, maintenance health, license compatibility, and security posture. Production additions require approval.
 
-- Check existing packages first.
-- Prefer built-in functionality when practical.
-- Consider maintenance, security, license, and compatibility.
+## Boundaries
 
-Do not add dependencies for trivial problems.
+**Always**
 
----
+- Run available checks (tests, lint, typecheck) before declaring work done.
+- Report verification honestly: what was run, the result, and anything that could not be run and why.
+- Add or update tests covering behavior you changed.
 
-## Security
+**Ask first**
 
-Never:
+- Schema, migration, or persisted-data-format changes — confirm a rollback path exists.
+- New dependencies; edits to CI/CD, build, auth, or security configuration.
+- Breaking changes to public APIs or exported signatures.
+- Deleting seemingly unused code, files, or failing tests.
 
-- Commit secrets, credentials, tokens, or private keys.
-- Hardcode sensitive information.
-- Disable security protections to bypass issues.
-- Expose sensitive data in logs.
+**Never**
 
-Consider:
-
-- Input validation.
-- Authentication and authorization.
-- Permissions and least privilege.
-- Data protection (encryption, masking).
-- Secure defaults.
-
----
+- Commit secrets, credentials, tokens, or private keys — keep them in environment variables or git-ignored config.
+- Force-push shared branches, rewrite published history, or bypass hooks and checks to force a pass.
+- Modify `AGENTS.md`, licenses, or changelogs unless explicitly asked.
+- Silence errors: empty catch blocks, swallowed exceptions, suppressed type errors, deleted assertions.
+- Claim verification that was not actually executed.
 
 ## Data changes
 
-Before changing data structures or schemas:
-
-Check:
-
-- Existing data compatibility.
-- Migration requirements.
-- Backup requirements.
-- Rollback options.
-
-Never:
-
-- Delete user data without approval.
-- Make destructive changes blindly.
-
----
+Before changing schemas or storage formats: check backward compatibility, write the migration, verify the rollback works. Destructive data operations require explicit approval.
 
 ## Versioning
 
-Follow semantic versioning:
-
-- **Major**: breaking changes.
-- **Minor**: new backwards-compatible features.
-- **Patch**: bug fixes.
-
-Rules:
-
-- Use the highest applicable version level.
-- Keep versions synchronized across related artifacts.
-- Update release notes when required.
-- Do not bump versions for documentation-only changes unless required.
+When the project tracks releases, apply semver: **major** = breaking, **minor** = backwards-compatible feature, **patch** = fix. Choose the highest applicable level, keep related artifacts in sync, and skip bumps for documentation-only changes.
 
 ---
 
-## Git commits
-
-Use conventional commits:
-
-```text
-type: description
-```
-
-Examples:
-
-```text
-feat: add export feature
-fix: resolve startup crash
-chore: update dependencies
-refactor: simplify data handling
-docs: update installation guide
-```
-
-Keep commits focused, atomic, and descriptive.
-
----
-
-## Code comments
-
-Comments should explain:
-
-- Why something exists.
-- Non-obvious behavior.
-- Important tradeoffs or constraints.
-
-Do not add comments that:
-
-- Explain obvious code.
-- Restate the implementation.
-- Describe what was changed (use commit messages for that).
-- Add AI-generated filler.
-
----
-
-## Engineering principles
-
-- Prefer correctness over speed.
-- Prefer simple solutions over clever ones.
-- Minimize unnecessary changes.
-- Read before replacing.
-- Reuse existing patterns.
-- Consider edge cases.
-- Avoid premature optimization.
-- Avoid unnecessary abstraction.
-
----
-
-## AI behavior
-
-When modifying code:
-
-- Keep changes production-quality.
-- Do not inflate code size without value.
-- Do not add artificial complexity.
-- Do not hide errors or swallow exceptions.
-- Do not ignore failing checks.
-- Do not rewrite unrelated areas.
-
-The goal is reliable software changes, not maximum output.
+**Definition of done** — confirm before finishing any change: focused diff ✓ · checks pass ✓ · honest report delivered ✓ · nothing touched beyond the request ✓.
