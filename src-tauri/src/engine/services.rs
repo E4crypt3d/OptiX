@@ -327,7 +327,7 @@ fn action_executable(action: &str) -> Option<String> {
     let mut s = action.trim().to_string();
     // Strip a leading `cmd.exe /c ...` wrapper.
     if let Some(idx) = s.to_ascii_lowercase().find("cmd.exe") {
-        if let Some(rest) = s[idx..].splitn(2, "/c").nth(1) {
+        if let Some(rest) = s[idx..].split_once("/c").map(|(_, rest)| rest) {
             s = rest.to_string();
         }
     }

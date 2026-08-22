@@ -111,7 +111,7 @@ pub fn name_server(guid: &str) -> Option<String> {
     use winreg::enums::HKEY_LOCAL_MACHINE;
     use winreg::RegKey;
     let key = RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey(&format!(r"{TCPIP_INTERFACES}\{guid}"))
+        .open_subkey(format!(r"{TCPIP_INTERFACES}\{guid}"))
         .ok()?;
     key.get_value::<String, _>("NameServer").ok()
 }

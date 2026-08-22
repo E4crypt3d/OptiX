@@ -72,7 +72,7 @@ pub fn set_dword(adapter_key: &str, value_name: &str, value: u32) -> Result<()> 
     use winreg::RegKey;
 
     let key = RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey_with_flags(&format!(r"{NET_CLASS}\{adapter_key}"), KEY_READ | KEY_WRITE)
+        .open_subkey_with_flags(format!(r"{NET_CLASS}\{adapter_key}"), KEY_READ | KEY_WRITE)
         .map_err(|e| OptixError::Windows(format!("cannot open adapter {adapter_key}: {e}")))?;
     key.set_value(value_name, &value)
         .map_err(|e| OptixError::Windows(format!("cannot write {value_name}: {e}")))?;

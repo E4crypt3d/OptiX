@@ -130,7 +130,8 @@ fn enrich(name: &str, display_name: &str, state: u32) -> ServiceInfo {
         classification: String::new(),
     };
 
-    let Ok(key) = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(&format!(r"{SERVICES_KEY}\{name}"))
+    let Ok(key) =
+        RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(format!(r"{SERVICES_KEY}\{name}"))
     else {
         return info;
     };

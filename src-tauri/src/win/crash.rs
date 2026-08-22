@@ -94,8 +94,8 @@ pub fn query_application_events(max: usize) -> Vec<EventInfo> {
                         // Close every handle in this batch (including the one
                         // we just consumed) before returning — event handles
                         // are kernel objects and must not be leaked.
-                        for j in i..returned as usize {
-                            unsafe { evt::EvtClose(buffer[j]) };
+                        for handle in &buffer[i..returned as usize] {
+                            unsafe { evt::EvtClose(*handle) };
                         }
                         unsafe { evt::EvtClose(resultset) };
                         return out;

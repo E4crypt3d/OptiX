@@ -270,14 +270,11 @@ fn scan_wer_dirs(dirs: &[String]) -> Vec<WerScan> {
             let Some(info) = parse_wer(&text) else {
                 continue;
             };
-            let minidump_path = std::fs::read_dir(&sub)
-                .ok()
-                .map(|rd| {
-                    rd.flatten()
-                        .map(|e| e.path())
-                        .find(|p| p.extension().and_then(|e| e.to_str()) == Some("dmp"))
-                })
-                .flatten();
+            let minidump_path = std::fs::read_dir(&sub).ok().and_then(|rd| {
+                rd.flatten()
+                    .map(|e| e.path())
+                    .find(|p| p.extension().and_then(|e| e.to_str()) == Some("dmp"))
+            });
             out.push(WerScan {
                 info,
                 wer_path: wer_path.to_string_lossy().into_owned(),
@@ -289,6 +286,10 @@ fn scan_wer_dirs(dirs: &[String]) -> Vec<WerScan> {
 }
 
 /// Build a `CrashReport`, computing derived severity + recommendation.
+// Positional record builder with three call sites; wrapping the optional
+// fields in a struct would repeat nine field names at each site for no
+// clarity gain.
+#[allow(clippy::too_many_arguments)]
 fn build_report(
     detected_at: i64,
     app: String,
@@ -443,7 +444,7 @@ pub fn scan_crashes() -> Vec<CrashReport> {
         reports.push(build_report(mtime, app, None, None, None, None, None, Some(path), "minidump"));
     }
 
-    reports.sort_by(|a, b| b.detected_at.cmp(&a.detected_at));
+    reports.sort_by_key(|r| std::cmp::Reverse(r.detected_at));
     reports
 }
 

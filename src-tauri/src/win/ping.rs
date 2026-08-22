@@ -14,7 +14,7 @@ pub fn ping_host(host: &str, count: u32, timeout_ms: u32) -> Result<Vec<f64>> {
         IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho, ICMP_ECHO_REPLY, IP_OPTION_INFORMATION,
     };
 
-    let count = count.min(64).max(1);
+    let count = count.clamp(1, 64);
     let timeout = timeout_ms.clamp(100, 10_000);
 
     let ip = host
@@ -70,7 +70,7 @@ pub fn ping_host(host: &str, count: u32, timeout_ms: u32) -> Result<Vec<f64>> {
 pub fn ping_host(host: &str, count: u32, timeout_ms: u32) -> Result<Vec<f64>> {
     use std::process::Command;
 
-    let count = count.min(64).max(1);
+    let count = count.clamp(1, 64);
     // `--` stops option parsing so a host starting with `-` is treated as a
     // target, not a flag (the host string comes from the frontend).
     let output = Command::new("ping")

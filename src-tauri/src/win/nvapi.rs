@@ -137,7 +137,7 @@ mod ffi {
 
     fn lookup<F>(module: HMODULE, name: &[u8]) -> Option<F> {
         unsafe {
-            let raw = GetProcAddress(module, name.as_ptr() as *const u8);
+            let raw = GetProcAddress(module, name.as_ptr());
             // FARPROC is `Option<unsafe extern "system" fn() -> isize>`;
             // transmute_copy works for any fn-pointer-sized F.
             raw.map(|f| std::mem::transmute_copy::<_, F>(&f))

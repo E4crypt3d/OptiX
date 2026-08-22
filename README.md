@@ -104,7 +104,7 @@ frontend.
 ### Prerequisites
 
 - [Node.js](https://nodejs.org) 20+ and npm
-- [Rust](https://rustup.rs) stable (MSRV 1.85)
+- [Rust](https://rustup.rs) stable (MSRV 1.87)
 - On Linux: `webkit2gtk` and the system dependencies Tauri requires (see the
   [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
 

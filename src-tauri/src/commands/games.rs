@@ -143,7 +143,7 @@ pub fn apply_game_profile(
             prefer_max_performance: profile.power_profile != "none",
             shader_cache_on: true,
         };
-        let exe = (!game.executable.is_empty()).then(|| game.executable.as_str());
+        let exe = (!game.executable.is_empty()).then_some(game.executable.as_str());
         match crate::win::nvapi::apply_profile(&game.name, exe, &opts) {
             Ok(r) => {
                 let snap_id = match &snapshot_id {

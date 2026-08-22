@@ -113,7 +113,7 @@ fn median(sorted: &[f64]) -> Option<f64> {
         return None;
     }
     let mid = sorted.len() / 2;
-    Some(if sorted.len() % 2 == 0 {
+    Some(if sorted.len().is_multiple_of(2) {
         (sorted[mid - 1] + sorted[mid]) / 2.0
     } else {
         sorted[mid]
@@ -456,7 +456,7 @@ pub fn ping_test(host: &str, count: u32) -> crate::error::Result<crate::models::
     let mut sorted = samples.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
     let received = samples.len() as u64;
-    let sent = count.min(64).max(1) as u64;
+    let sent = count.clamp(1, 64) as u64;
     let loss_percent = if sent == 0 {
         0.0
     } else {

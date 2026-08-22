@@ -124,9 +124,6 @@ pub fn run() {
             commands::diagnostics::run_diagnostics,
         ])
         .run(tauri::generate_context!())
-        .map_err(|e| {
-            logging::error("tauri run failed", &e);
-            e
-        })
+        .inspect_err(|e| logging::error("tauri run failed", e))
         .expect("error while running tauri application");
 }
